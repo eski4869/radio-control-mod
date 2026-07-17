@@ -19,7 +19,7 @@ Commands are separated by spaces. Numbers are frame counts.
 | `l10` | Hold left for 10 frames |
 | `w60` | Wait for 60 frames |
 
-`j`, `r`, and `l` without a number use 35 frames.
+`j`, `jr`, `jl`, `r`, and `l` without a number use 35 frames.
 
 Example:
 

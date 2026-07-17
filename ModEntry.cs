@@ -380,12 +380,12 @@ namespace RadioControlMod
 
             if (token.StartsWith("jr", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, true, false, false, out step);
+                return TryMakeStep(token, 2, true, true, false, true, out step);
             }
 
             if (token.StartsWith("jl", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, false, true, false, out step);
+                return TryMakeStep(token, 2, true, false, true, true, out step);
             }
 
             if (token.StartsWith("j", StringComparison.Ordinal))
