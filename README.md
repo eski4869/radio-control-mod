@@ -52,7 +52,11 @@ The HTTP server is provided by JumpKingHttpCommandBroker.
 ```xml
 <RadioControlPreferences>
   <JumpKey>LeftControl</JumpKey>
+  <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>
 ```
 
 Restart the game after editing the file.
+
+`JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
+`35` frames stays exact.

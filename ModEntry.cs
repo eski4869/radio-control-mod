@@ -53,6 +53,15 @@ namespace RadioControlMod
             }
         }
 
+        internal static double JumpFrameLaplaceAlpha
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                return _preferences.JumpFrameLaplaceAlpha;
+            }
+        }
+
         private static void EnsurePatched()
         {
             if (_harmony != null)
@@ -121,11 +130,15 @@ namespace RadioControlMod
 
             string assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             _settingsPath = Path.Combine(assemblyDir, SettingsFileName);
+            bool shouldSavePreferences = false;
 
             try
             {
                 if (File.Exists(_settingsPath))
                 {
+                    string settingsText = File.ReadAllText(_settingsPath);
+                    shouldSavePreferences = !settingsText.Contains("JumpFrameLaplaceAlpha");
+
                     var serializer = new XmlSerializer(typeof(RadioControlPreferences));
 
                     using (var stream = File.OpenRead(_settingsPath))
@@ -141,6 +154,11 @@ namespace RadioControlMod
             if (_preferences == null)
             {
                 _preferences = new RadioControlPreferences();
+                shouldSavePreferences = true;
+            }
+
+            if (shouldSavePreferences)
+            {
                 SavePreferences();
             }
         }
@@ -165,6 +183,7 @@ namespace RadioControlMod
     public class RadioControlPreferences
     {
         public Keys JumpKey { get; set; } = Keys.LeftControl;
+        public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
     }
 
     internal static class ControllerManagerPadStatePatch
@@ -434,6 +453,7 @@ namespace RadioControlMod
         private const int MaxCommandsPerMessage = 20;
         private const int MaxFramesPerCommand = 600;
         private const int MaxTotalFramesPerMessage = 1800;
+        private static readonly Random Random = new Random();
 
         public static bool TryParse(string text, out RadioProgram program, out string error)
         {
@@ -562,8 +582,44 @@ namespace RadioControlMod
                 return false;
             }
 
+            if (jump && frames != DefaultFrames)
+            {
+                frames += SampleDiscreteLaplace(ModEntry.JumpFrameLaplaceAlpha);
+
+                if (frames < 1)
+                {
+                    frames = 1;
+                }
+                else if (frames > MaxFramesPerCommand)
+                {
+                    frames = MaxFramesPerCommand;
+                }
+            }
+
             step = new RadioStep(token.Substring(0, prefixLength), frames, left, right, jump);
             return true;
+        }
+
+        private static int SampleDiscreteLaplace(double alpha)
+        {
+            if (alpha <= 0.0 || alpha >= 1.0)
+            {
+                return 0;
+            }
+
+            double zeroProbability = (1.0 - alpha) / (1.0 + alpha);
+            if (Random.NextDouble() < zeroProbability)
+            {
+                return 0;
+            }
+
+            int magnitude = 1;
+            while (Random.NextDouble() < alpha)
+            {
+                magnitude++;
+            }
+
+            return Random.Next(2) == 0 ? -magnitude : magnitude;
         }
     }
 
