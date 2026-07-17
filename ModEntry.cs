@@ -308,6 +308,7 @@ namespace RadioControlMod
 
     internal static class RadioCommandParser
     {
+        private const int DefaultFrames = 35;
         private const int MaxCommandsPerMessage = 20;
         private const int MaxFramesPerCommand = 600;
         private const int MaxTotalFramesPerMessage = 1800;
@@ -379,32 +380,32 @@ namespace RadioControlMod
 
             if (token.StartsWith("jr", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, true, false, out step);
+                return TryMakeStep(token, 2, true, true, false, false, out step);
             }
 
             if (token.StartsWith("jl", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, false, true, out step);
+                return TryMakeStep(token, 2, true, false, true, false, out step);
             }
 
             if (token.StartsWith("j", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, true, false, false, out step);
+                return TryMakeStep(token, 1, true, false, false, true, out step);
             }
 
             if (token.StartsWith("r", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, true, false, out step);
+                return TryMakeStep(token, 1, false, true, false, true, out step);
             }
 
             if (token.StartsWith("l", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, false, true, out step);
+                return TryMakeStep(token, 1, false, false, true, true, out step);
             }
 
             if (token.StartsWith("w", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, false, false, out step);
+                return TryMakeStep(token, 1, false, false, false, false, out step);
             }
 
             return false;
@@ -416,6 +417,7 @@ namespace RadioControlMod
             bool jump,
             bool right,
             bool left,
+            bool allowDefaultFrames,
             out RadioStep step
         )
         {
@@ -423,7 +425,13 @@ namespace RadioControlMod
 
             if (token.Length <= prefixLength)
             {
-                return false;
+                if (!allowDefaultFrames)
+                {
+                    return false;
+                }
+
+                step = new RadioStep(token.Substring(0, prefixLength), DefaultFrames, left, right, jump);
+                return true;
             }
 
             int frames;
