@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Reflection;
+using System.Xml.Serialization;
 using EntityComponent;
 using HarmonyLib;
 using JumpKing;
@@ -11,6 +13,7 @@ using JumpKing.Util;
 using JumpKing.Util.Tags;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
+using Microsoft.Xna.Framework.Input;
 
 namespace RadioControlMod
 {
@@ -18,12 +21,16 @@ namespace RadioControlMod
     public static class ModEntry
     {
         internal const string CommandTarget = "radio_control";
+        private const string SettingsFileName = "eski4869.RadioControlMod.Settings.xml";
 
         private static Harmony _harmony;
+        private static RadioControlPreferences _preferences;
+        private static string _settingsPath;
 
         [BeforeLevelLoad]
         public static void BeforeLevelLoad()
         {
+            EnsurePreferencesLoaded();
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
         }
@@ -31,9 +38,19 @@ namespace RadioControlMod
         [OnLevelStart]
         public static void OnLevelStart()
         {
+            EnsurePreferencesLoaded();
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             RadioControlOverlay.EnsureAdded();
+        }
+
+        internal static Keys JumpKey
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                return _preferences.JumpKey;
+            }
         }
 
         private static void EnsurePatched()
@@ -53,6 +70,9 @@ namespace RadioControlMod
                     typeof(ControllerManager),
                     "GetPressedPadState"
                 );
+                MethodInfo getKeyboardButtons = AccessTools.Method(
+                    "JumpKing.Controller.KeyboardPad:GetPressedButtons"
+                );
                 MethodInfo padStatePostfix = AccessTools.Method(
                     typeof(ControllerManagerPadStatePatch),
                     "Postfix"
@@ -61,11 +81,17 @@ namespace RadioControlMod
                     typeof(ControllerManagerPressedPadStatePatch),
                     "Postfix"
                 );
+                MethodInfo keyboardButtonsPostfix = AccessTools.Method(
+                    typeof(KeyboardPadGetPressedButtonsPatch),
+                    "Postfix"
+                );
 
                 if (getPadState == null ||
                     getPressedPadState == null ||
+                    getKeyboardButtons == null ||
                     padStatePostfix == null ||
-                    pressedPadStatePostfix == null)
+                    pressedPadStatePostfix == null ||
+                    keyboardButtonsPostfix == null)
                 {
                     JumpKing.Program.crashLog.AddErrorMessage(
                         "RadioControl patch target not found."
@@ -76,6 +102,7 @@ namespace RadioControlMod
                 _harmony = new Harmony("eski4869.RadioControlMod");
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
+                _harmony.Patch(getKeyboardButtons, postfix: new HarmonyMethod(keyboardButtonsPostfix));
             }
             catch (Exception ex)
             {
@@ -84,6 +111,60 @@ namespace RadioControlMod
                 );
             }
         }
+
+        private static void EnsurePreferencesLoaded()
+        {
+            if (_preferences != null)
+            {
+                return;
+            }
+
+            string assemblyDir = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            _settingsPath = Path.Combine(assemblyDir, SettingsFileName);
+
+            try
+            {
+                if (File.Exists(_settingsPath))
+                {
+                    var serializer = new XmlSerializer(typeof(RadioControlPreferences));
+
+                    using (var stream = File.OpenRead(_settingsPath))
+                    {
+                        _preferences = (RadioControlPreferences)serializer.Deserialize(stream);
+                    }
+                }
+            }
+            catch
+            {
+            }
+
+            if (_preferences == null)
+            {
+                _preferences = new RadioControlPreferences();
+                SavePreferences();
+            }
+        }
+
+        private static void SavePreferences()
+        {
+            try
+            {
+                var serializer = new XmlSerializer(typeof(RadioControlPreferences));
+
+                using (var stream = File.Create(_settingsPath))
+                {
+                    serializer.Serialize(stream, _preferences);
+                }
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    public class RadioControlPreferences
+    {
+        public Keys JumpKey { get; set; } = Keys.LeftControl;
     }
 
     internal static class ControllerManagerPadStatePatch
@@ -99,6 +180,14 @@ namespace RadioControlMod
         public static void Postfix(ref PadState __result)
         {
             RadioVirtualInput.ApplyPressed(ref __result);
+        }
+    }
+
+    internal static class KeyboardPadGetPressedButtonsPatch
+    {
+        public static void Postfix(ref int[] __result)
+        {
+            RadioVirtualInput.AppendKeyboardButtons(ref __result);
         }
     }
 
@@ -197,6 +286,39 @@ namespace RadioControlMod
             {
                 state.jump = true;
             }
+        }
+
+        public static void AppendKeyboardButtons(ref int[] buttons)
+        {
+            if (!_jump)
+            {
+                return;
+            }
+
+            if (RadioGameState.IsPaused())
+            {
+                return;
+            }
+
+            if (EntityManager.instance == null ||
+                EntityManager.instance.Find<PlayerEntity>() == null)
+            {
+                return;
+            }
+
+            int jumpKey = (int)ModEntry.JumpKey;
+            List<int> merged = new List<int>(buttons ?? new int[0]);
+
+            for (int i = 0; i < merged.Count; i++)
+            {
+                if (merged[i] == jumpKey)
+                {
+                    return;
+                }
+            }
+
+            merged.Add(jumpKey);
+            buttons = merged.ToArray();
         }
     }
 

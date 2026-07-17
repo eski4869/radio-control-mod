@@ -44,3 +44,15 @@ http://127.0.0.1:8081/command?target=radio_control&command=jr35%20w10%20l5
 ```
 
 The HTTP server is provided by JumpKingHttpCommandBroker.
+
+## Settings
+
+`eski4869.RadioControlMod.Settings.xml` is generated next to the mod.
+
+```xml
+<RadioControlPreferences>
+  <JumpKey>LeftControl</JumpKey>
+</RadioControlPreferences>
+```
+
+Restart the game after editing the file.
