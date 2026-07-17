@@ -45,15 +45,27 @@ namespace RadioControlMod
 
             try
             {
-                MethodInfo original = AccessTools.Method(
-                    "JumpKing.Controller.KeyboardPad:GetPressedButtons"
+                MethodInfo getPadState = AccessTools.Method(
+                    typeof(ControllerManager),
+                    "GetPadState"
                 );
-                MethodInfo postfix = AccessTools.Method(
-                    typeof(KeyboardPadGetPressedButtonsPatch),
+                MethodInfo getPressedPadState = AccessTools.Method(
+                    typeof(ControllerManager),
+                    "GetPressedPadState"
+                );
+                MethodInfo padStatePostfix = AccessTools.Method(
+                    typeof(ControllerManagerPadStatePatch),
+                    "Postfix"
+                );
+                MethodInfo pressedPadStatePostfix = AccessTools.Method(
+                    typeof(ControllerManagerPressedPadStatePatch),
                     "Postfix"
                 );
 
-                if (original == null || postfix == null)
+                if (getPadState == null ||
+                    getPressedPadState == null ||
+                    padStatePostfix == null ||
+                    pressedPadStatePostfix == null)
                 {
                     JumpKing.Program.crashLog.AddErrorMessage(
                         "RadioControl patch target not found."
@@ -62,7 +74,8 @@ namespace RadioControlMod
                 }
 
                 _harmony = new Harmony("eski4869.RadioControlMod");
-                _harmony.Patch(original, postfix: new HarmonyMethod(postfix));
+                _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
+                _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
             }
             catch (Exception ex)
             {
@@ -73,11 +86,19 @@ namespace RadioControlMod
         }
     }
 
-    internal static class KeyboardPadGetPressedButtonsPatch
+    internal static class ControllerManagerPadStatePatch
     {
-        public static void Postfix(ref int[] __result)
+        public static void Postfix(ref PadState __result)
         {
-            RadioVirtualInput.AppendButtons(ref __result);
+            RadioVirtualInput.ApplyHeld(ref __result);
+        }
+    }
+
+    internal static class ControllerManagerPressedPadStatePatch
+    {
+        public static void Postfix(ref PadState __result)
+        {
+            RadioVirtualInput.ApplyPressed(ref __result);
         }
     }
 
@@ -86,9 +107,15 @@ namespace RadioControlMod
         private static bool _left;
         private static bool _right;
         private static bool _jump;
+        private static bool _pressedLeft;
+        private static bool _pressedRight;
+        private static bool _pressedJump;
 
         public static void Set(bool left, bool right, bool jump)
         {
+            _pressedLeft = left && !_left;
+            _pressedRight = right && !_right;
+            _pressedJump = jump && !_jump;
             _left = left;
             _right = right;
             _jump = jump;
@@ -99,9 +126,12 @@ namespace RadioControlMod
             _left = false;
             _right = false;
             _jump = false;
+            _pressedLeft = false;
+            _pressedRight = false;
+            _pressedJump = false;
         }
 
-        public static void AppendButtons(ref int[] buttons)
+        public static void ApplyHeld(ref PadState state)
         {
             if (!_left && !_right && !_jump)
             {
@@ -119,37 +149,54 @@ namespace RadioControlMod
                 return;
             }
 
-            List<int> merged = new List<int>(buttons ?? new int[0]);
-
             if (_left)
             {
-                AddIfMissing(merged, (int)JKpadButtons.Left);
+                state.left = true;
             }
 
             if (_right)
             {
-                AddIfMissing(merged, (int)JKpadButtons.Right);
+                state.right = true;
             }
 
             if (_jump)
             {
-                AddIfMissing(merged, (int)JKpadButtons.Jump);
+                state.jump = true;
             }
-
-            buttons = merged.ToArray();
         }
 
-        private static void AddIfMissing(List<int> values, int value)
+        public static void ApplyPressed(ref PadState state)
         {
-            for (int i = 0; i < values.Count; i++)
+            if (!_pressedLeft && !_pressedRight && !_pressedJump)
             {
-                if (values[i] == value)
-                {
-                    return;
-                }
+                return;
             }
 
-            values.Add(value);
+            if (RadioGameState.IsPaused())
+            {
+                return;
+            }
+
+            if (EntityManager.instance == null ||
+                EntityManager.instance.Find<PlayerEntity>() == null)
+            {
+                return;
+            }
+
+            if (_pressedLeft)
+            {
+                state.left = true;
+            }
+
+            if (_pressedRight)
+            {
+                state.right = true;
+            }
+
+            if (_pressedJump)
+            {
+                state.jump = true;
+            }
         }
     }
 
