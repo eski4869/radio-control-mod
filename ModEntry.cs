@@ -522,32 +522,32 @@ namespace RadioControlMod
 
             if (token.StartsWith("jr", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, true, false, true, out step);
+                return TryMakeStep(token, 2, true, true, false, out step);
             }
 
             if (token.StartsWith("jl", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 2, true, false, true, true, out step);
+                return TryMakeStep(token, 2, true, false, true, out step);
             }
 
             if (token.StartsWith("j", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, true, false, false, true, out step);
+                return TryMakeStep(token, 1, true, false, false, out step);
             }
 
             if (token.StartsWith("r", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, true, false, true, out step);
+                return TryMakeStep(token, 1, false, true, false, out step);
             }
 
             if (token.StartsWith("l", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, false, true, true, out step);
+                return TryMakeStep(token, 1, false, false, true, out step);
             }
 
             if (token.StartsWith("w", StringComparison.Ordinal))
             {
-                return TryMakeStep(token, 1, false, false, false, false, out step);
+                return TryMakeStep(token, 1, false, false, false, out step);
             }
 
             return false;
@@ -559,27 +559,18 @@ namespace RadioControlMod
             bool jump,
             bool right,
             bool left,
-            bool allowDefaultFrames,
             out RadioStep step
         )
         {
             step = null;
+            int frames = DefaultFrames;
 
-            if (token.Length <= prefixLength)
+            if (token.Length > prefixLength)
             {
-                if (!allowDefaultFrames)
+                if (!int.TryParse(token.Substring(prefixLength), out frames) || frames <= 0)
                 {
                     return false;
                 }
-
-                step = new RadioStep(token.Substring(0, prefixLength), DefaultFrames, left, right, jump);
-                return true;
-            }
-
-            int frames;
-            if (!int.TryParse(token.Substring(prefixLength), out frames) || frames <= 0)
-            {
-                return false;
             }
 
             if (jump && frames != DefaultFrames)
