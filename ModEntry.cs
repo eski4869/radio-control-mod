@@ -942,7 +942,7 @@ namespace RadioControlMod
 
             TextHelper.DrawString(
                 font,
-                "rajikon mode",
+                "Rajikon Mode",
                 new Vector2(10f, 336f),
                 Color.Red,
                 Vector2.Zero,
