@@ -14,7 +14,6 @@ using JumpKing.Util;
 using JumpKing.Util.Tags;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
-using Microsoft.Xna.Framework.Input;
 
 namespace RadioControlMod
 {
@@ -43,15 +42,6 @@ namespace RadioControlMod
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             RadioControlOverlay.EnsureAdded();
-        }
-
-        internal static Keys JumpKey
-        {
-            get
-            {
-                EnsurePreferencesLoaded();
-                return _preferences.JumpKey;
-            }
         }
 
         internal static double JumpFrameLaplaceAlpha
@@ -148,9 +138,6 @@ namespace RadioControlMod
                     typeof(InputComponent),
                     "Update"
                 );
-                MethodInfo getKeyboardButtons = AccessTools.Method(
-                    "JumpKing.Controller.KeyboardPad:GetPressedButtons"
-                );
                 MethodInfo inputComponentUpdatePrefix = AccessTools.Method(
                     typeof(InputComponentUpdatePatch),
                     "Prefix"
@@ -163,19 +150,12 @@ namespace RadioControlMod
                     typeof(ControllerManagerPressedPadStatePatch),
                     "Postfix"
                 );
-                MethodInfo keyboardButtonsPostfix = AccessTools.Method(
-                    typeof(KeyboardPadGetPressedButtonsPatch),
-                    "Postfix"
-                );
-
                 if (getPadState == null ||
                     getPressedPadState == null ||
                     inputComponentUpdate == null ||
-                    getKeyboardButtons == null ||
                     inputComponentUpdatePrefix == null ||
                     padStatePostfix == null ||
-                    pressedPadStatePostfix == null ||
-                    keyboardButtonsPostfix == null)
+                    pressedPadStatePostfix == null)
                 {
                     JumpKing.Program.crashLog.AddErrorMessage(
                         "RadioControl patch target not found."
@@ -187,7 +167,6 @@ namespace RadioControlMod
                 _harmony.Patch(inputComponentUpdate, prefix: new HarmonyMethod(inputComponentUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
-                _harmony.Patch(getKeyboardButtons, postfix: new HarmonyMethod(keyboardButtonsPostfix));
             }
             catch (Exception ex)
             {
@@ -271,7 +250,6 @@ namespace RadioControlMod
     {
         public bool IsEnabled { get; set; } = true;
         public bool IsDebugEnabled { get; set; } = true;
-        public Keys JumpKey { get; set; } = Keys.LeftControl;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
     }
 
@@ -322,14 +300,6 @@ namespace RadioControlMod
         public static void Postfix(ref PadState __result)
         {
             RadioVirtualInput.ApplyPressed(ref __result);
-        }
-    }
-
-    internal static class KeyboardPadGetPressedButtonsPatch
-    {
-        public static void Postfix(ref int[] __result)
-        {
-            RadioVirtualInput.AppendKeyboardButtons(ref __result);
         }
     }
 
@@ -430,38 +400,6 @@ namespace RadioControlMod
             }
         }
 
-        public static void AppendKeyboardButtons(ref int[] buttons)
-        {
-            if (!_jump)
-            {
-                return;
-            }
-
-            if (RadioGameState.IsPaused())
-            {
-                return;
-            }
-
-            if (EntityManager.instance == null ||
-                EntityManager.instance.Find<PlayerEntity>() == null)
-            {
-                return;
-            }
-
-            int jumpKey = (int)ModEntry.JumpKey;
-            List<int> merged = new List<int>(buttons ?? new int[0]);
-
-            for (int i = 0; i < merged.Count; i++)
-            {
-                if (merged[i] == jumpKey)
-                {
-                    return;
-                }
-            }
-
-            merged.Add(jumpKey);
-            buttons = merged.ToArray();
-        }
     }
 
     internal sealed class RadioProgram

@@ -53,7 +53,6 @@ The HTTP server is provided by JumpKingHttpCommandBroker.
 <RadioControlPreferences>
   <IsEnabled>true</IsEnabled>
   <IsDebugEnabled>true</IsDebugEnabled>
-  <JumpKey>LeftControl</JumpKey>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>
 ```
