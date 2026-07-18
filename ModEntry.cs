@@ -144,15 +144,15 @@ namespace RadioControlMod
                     typeof(ControllerManager),
                     "GetPressedPadState"
                 );
-                MethodInfo controllerUpdate = AccessTools.Method(
-                    typeof(ControllerManager),
+                MethodInfo inputComponentUpdate = AccessTools.Method(
+                    typeof(InputComponent),
                     "Update"
                 );
                 MethodInfo getKeyboardButtons = AccessTools.Method(
                     "JumpKing.Controller.KeyboardPad:GetPressedButtons"
                 );
-                MethodInfo controllerUpdatePrefix = AccessTools.Method(
-                    typeof(ControllerManagerUpdatePatch),
+                MethodInfo inputComponentUpdatePrefix = AccessTools.Method(
+                    typeof(InputComponentUpdatePatch),
                     "Prefix"
                 );
                 MethodInfo padStatePostfix = AccessTools.Method(
@@ -170,9 +170,9 @@ namespace RadioControlMod
 
                 if (getPadState == null ||
                     getPressedPadState == null ||
-                    controllerUpdate == null ||
+                    inputComponentUpdate == null ||
                     getKeyboardButtons == null ||
-                    controllerUpdatePrefix == null ||
+                    inputComponentUpdatePrefix == null ||
                     padStatePostfix == null ||
                     pressedPadStatePostfix == null ||
                     keyboardButtonsPostfix == null)
@@ -184,7 +184,7 @@ namespace RadioControlMod
                 }
 
                 _harmony = new Harmony("eski4869.RadioControlMod");
-                _harmony.Patch(controllerUpdate, prefix: new HarmonyMethod(controllerUpdatePrefix));
+                _harmony.Patch(inputComponentUpdate, prefix: new HarmonyMethod(inputComponentUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
                 _harmony.Patch(getKeyboardButtons, postfix: new HarmonyMethod(keyboardButtonsPostfix));
@@ -259,7 +259,7 @@ namespace RadioControlMod
         }
     }
 
-    internal static class ControllerManagerUpdatePatch
+    internal static class InputComponentUpdatePatch
     {
         public static void Prefix()
         {
