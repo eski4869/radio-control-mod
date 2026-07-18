@@ -79,8 +79,16 @@ namespace RadioControlMod
                     typeof(ControllerManager),
                     "GetPressedPadState"
                 );
+                MethodInfo controllerUpdate = AccessTools.Method(
+                    typeof(ControllerManager),
+                    "Update"
+                );
                 MethodInfo getKeyboardButtons = AccessTools.Method(
                     "JumpKing.Controller.KeyboardPad:GetPressedButtons"
+                );
+                MethodInfo controllerUpdatePrefix = AccessTools.Method(
+                    typeof(ControllerManagerUpdatePatch),
+                    "Prefix"
                 );
                 MethodInfo padStatePostfix = AccessTools.Method(
                     typeof(ControllerManagerPadStatePatch),
@@ -97,7 +105,9 @@ namespace RadioControlMod
 
                 if (getPadState == null ||
                     getPressedPadState == null ||
+                    controllerUpdate == null ||
                     getKeyboardButtons == null ||
+                    controllerUpdatePrefix == null ||
                     padStatePostfix == null ||
                     pressedPadStatePostfix == null ||
                     keyboardButtonsPostfix == null)
@@ -109,6 +119,7 @@ namespace RadioControlMod
                 }
 
                 _harmony = new Harmony("eski4869.RadioControlMod");
+                _harmony.Patch(controllerUpdate, prefix: new HarmonyMethod(controllerUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
                 _harmony.Patch(getKeyboardButtons, postfix: new HarmonyMethod(keyboardButtonsPostfix));
@@ -177,6 +188,14 @@ namespace RadioControlMod
             catch
             {
             }
+        }
+    }
+
+    internal static class ControllerManagerUpdatePatch
+    {
+        public static void Prefix()
+        {
+            RadioControlRuntime.UpdateInputFrame();
         }
     }
 
@@ -688,14 +707,13 @@ namespace RadioControlMod
             }
         }
 
-        public static void Update(float delta)
+        public static void UpdateInputFrame()
         {
             BrokerCommandClient.Register(ModEntry.CommandTarget);
 
             if (RadioGameState.IsPaused())
             {
                 RadioVirtualInput.Clear();
-                TickMessage(delta);
                 return;
             }
 
@@ -707,7 +725,6 @@ namespace RadioControlMod
 
             if (_program == null)
             {
-                TickMessage(delta);
                 return;
             }
 
@@ -723,6 +740,11 @@ namespace RadioControlMod
                 MessageSeconds = 2f;
                 _program = null;
             }
+        }
+
+        public static void UpdateUi(float delta)
+        {
+            TickMessage(delta);
         }
 
         private static void TryStartNextProgram()
@@ -783,7 +805,7 @@ namespace RadioControlMod
 
         protected override void Update(float delta)
         {
-            RadioControlRuntime.Update(delta);
+            RadioControlRuntime.UpdateUi(delta);
         }
 
         public void ForegroundDraw()
