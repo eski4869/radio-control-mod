@@ -47,7 +47,7 @@
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Jump King\MonoGame.Framework.dll</HintPath>
     </Reference>
     <Reference Include="0Harmony">
-      <Private>False</Private>
+      <Private>True</Private>
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Jump King\Content\JKMods\0Harmony.dll</HintPath>
     </Reference>
   </ItemGroup>

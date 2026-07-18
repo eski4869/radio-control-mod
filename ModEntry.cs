@@ -249,7 +249,7 @@ namespace RadioControlMod
     public class RadioControlPreferences
     {
         public bool IsEnabled { get; set; } = true;
-        public bool IsDebugEnabled { get; set; } = true;
+        public bool IsDebugEnabled { get; set; } = false;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
     }
 

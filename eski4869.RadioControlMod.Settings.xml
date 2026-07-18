@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <RadioControlPreferences>
   <IsEnabled>true</IsEnabled>
-  <IsDebugEnabled>true</IsDebugEnabled>
+  <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>

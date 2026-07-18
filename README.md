@@ -52,7 +52,7 @@ The HTTP server is provided by JumpKingHttpCommandBroker.
 ```xml
 <RadioControlPreferences>
   <IsEnabled>true</IsEnabled>
-  <IsDebugEnabled>true</IsDebugEnabled>
+  <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>
 ```
