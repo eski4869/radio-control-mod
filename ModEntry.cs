@@ -8,6 +8,7 @@ using HarmonyLib;
 using JumpKing;
 using JumpKing.Controller;
 using JumpKing.Mods;
+using JumpKing.PauseMenu.BT.Actions;
 using JumpKing.Player;
 using JumpKing.Util;
 using JumpKing.Util.Tags;
@@ -60,6 +61,70 @@ namespace RadioControlMod
                 EnsurePreferencesLoaded();
                 return _preferences.JumpFrameLaplaceAlpha;
             }
+        }
+
+        internal static bool IsEnabled
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                return _preferences.IsEnabled;
+            }
+        }
+
+        internal static bool IsDebugEnabled
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                return _preferences.IsDebugEnabled;
+            }
+        }
+
+        internal static void SetEnabled(bool isEnabled)
+        {
+            EnsurePreferencesLoaded();
+
+            if (_preferences.IsEnabled == isEnabled)
+            {
+                return;
+            }
+
+            _preferences.IsEnabled = isEnabled;
+
+            if (!isEnabled)
+            {
+                RadioControlRuntime.Stop();
+            }
+
+            SavePreferences();
+        }
+
+        internal static void SetDebugEnabled(bool isDebugEnabled)
+        {
+            EnsurePreferencesLoaded();
+
+            if (_preferences.IsDebugEnabled == isDebugEnabled)
+            {
+                return;
+            }
+
+            _preferences.IsDebugEnabled = isDebugEnabled;
+            SavePreferences();
+        }
+
+        [PauseMenuItemSetting]
+        [MainMenuItemSetting]
+        public static RadioControlToggle RadioControlMenu(object factory, JumpKing.PauseMenu.GuiFormat format)
+        {
+            return new RadioControlToggle();
+        }
+
+        [PauseMenuItemSetting]
+        [MainMenuItemSetting]
+        public static RadioDebugToggle RadioDebugMenu(object factory, JumpKing.PauseMenu.GuiFormat format)
+        {
+            return new RadioDebugToggle();
         }
 
         private static void EnsurePatched()
@@ -148,7 +213,10 @@ namespace RadioControlMod
                 if (File.Exists(_settingsPath))
                 {
                     string settingsText = File.ReadAllText(_settingsPath);
-                    shouldSavePreferences = !settingsText.Contains("JumpFrameLaplaceAlpha");
+                    shouldSavePreferences =
+                        !settingsText.Contains("JumpFrameLaplaceAlpha") ||
+                        !settingsText.Contains("IsEnabled") ||
+                        !settingsText.Contains("IsDebugEnabled");
 
                     var serializer = new XmlSerializer(typeof(RadioControlPreferences));
 
@@ -201,8 +269,44 @@ namespace RadioControlMod
 
     public class RadioControlPreferences
     {
+        public bool IsEnabled { get; set; } = true;
+        public bool IsDebugEnabled { get; set; } = true;
         public Keys JumpKey { get; set; } = Keys.LeftControl;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
+    }
+
+    public class RadioControlToggle : ITextToggle
+    {
+        public RadioControlToggle() : base(ModEntry.IsEnabled)
+        {
+        }
+
+        protected override string GetName()
+        {
+            return "Radio Control";
+        }
+
+        protected override void OnToggle()
+        {
+            ModEntry.SetEnabled(toggle);
+        }
+    }
+
+    public class RadioDebugToggle : ITextToggle
+    {
+        public RadioDebugToggle() : base(ModEntry.IsDebugEnabled)
+        {
+        }
+
+        protected override string GetName()
+        {
+            return "Radio Debug";
+        }
+
+        protected override void OnToggle()
+        {
+            ModEntry.SetDebugEnabled(toggle);
+        }
     }
 
     internal static class ControllerManagerPadStatePatch
@@ -711,6 +815,13 @@ namespace RadioControlMod
         {
             BrokerCommandClient.Register(ModEntry.CommandTarget);
 
+            if (!ModEntry.IsEnabled)
+            {
+                Stop();
+                DiscardPendingCommands();
+                return;
+            }
+
             if (RadioGameState.IsPaused())
             {
                 RadioVirtualInput.Clear();
@@ -747,6 +858,12 @@ namespace RadioControlMod
             TickMessage(delta);
         }
 
+        public static void Stop()
+        {
+            RadioVirtualInput.Clear();
+            _program = null;
+        }
+
         private static void TryStartNextProgram()
         {
             string command;
@@ -769,6 +886,15 @@ namespace RadioControlMod
             _program = parsed;
             DisplayText = "Radio start: " + parsed.Source;
             MessageSeconds = 2f;
+        }
+
+        private static void DiscardPendingCommands()
+        {
+            string ignored;
+
+            while (BrokerCommandClient.TryDequeue(ModEntry.CommandTarget, out ignored))
+            {
+            }
         }
 
         private static void TickMessage(float delta)
@@ -810,7 +936,7 @@ namespace RadioControlMod
 
         public void ForegroundDraw()
         {
-            if (!RadioControlRuntime.HasDisplay)
+            if (!ModEntry.IsDebugEnabled || !RadioControlRuntime.HasDisplay)
             {
                 return;
             }

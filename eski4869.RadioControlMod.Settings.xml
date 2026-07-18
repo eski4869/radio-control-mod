@@ -1,5 +1,7 @@
 <?xml version="1.0"?>
 <RadioControlPreferences>
+  <IsEnabled>true</IsEnabled>
+  <IsDebugEnabled>true</IsDebugEnabled>
   <JumpKey>LeftControl</JumpKey>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>

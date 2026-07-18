@@ -51,6 +51,8 @@ The HTTP server is provided by JumpKingHttpCommandBroker.
 
 ```xml
 <RadioControlPreferences>
+  <IsEnabled>true</IsEnabled>
+  <IsDebugEnabled>true</IsDebugEnabled>
   <JumpKey>LeftControl</JumpKey>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
 </RadioControlPreferences>
@@ -60,3 +62,5 @@ Restart the game after editing the file.
 
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
+
+`Radio Control` and `Radio Debug` can also be toggled from the main menu or pause menu.
