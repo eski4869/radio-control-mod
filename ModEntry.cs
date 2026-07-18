@@ -991,7 +991,7 @@ namespace RadioControlMod
 
         private void DrawRajikonMode()
         {
-            if (!ModEntry.IsEnabled || !RadioControlRuntime.IsRunning)
+            if (!ModEntry.IsEnabled)
             {
                 return;
             }
