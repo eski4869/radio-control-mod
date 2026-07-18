@@ -811,6 +811,11 @@ namespace RadioControlMod
             }
         }
 
+        public static bool IsRunning
+        {
+            get { return _program != null; }
+        }
+
         public static void UpdateInputFrame()
         {
             BrokerCommandClient.Register(ModEntry.CommandTarget);
@@ -936,6 +941,8 @@ namespace RadioControlMod
 
         public void ForegroundDraw()
         {
+            DrawRajikonMode();
+
             if (!ModEntry.IsDebugEnabled || !RadioControlRuntime.HasDisplay)
             {
                 return;
@@ -977,6 +984,29 @@ namespace RadioControlMod
                 text,
                 new Vector2(x + paddingX, y + paddingY),
                 Color.White,
+                Vector2.Zero,
+                true
+            );
+        }
+
+        private void DrawRajikonMode()
+        {
+            if (!ModEntry.IsEnabled || !RadioControlRuntime.IsRunning)
+            {
+                return;
+            }
+
+            SpriteFont font = GetFont();
+            if (font == null)
+            {
+                return;
+            }
+
+            TextHelper.DrawString(
+                font,
+                "rajikon mode",
+                new Vector2(10f, 336f),
+                Color.Red,
                 Vector2.Zero,
                 true
             );
