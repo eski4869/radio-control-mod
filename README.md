@@ -8,7 +8,7 @@ Radio Control Mod receives short frame-based input programs through JumpKingHttp
 
 ## Command Format
 
-Numbers are frame counts. Spaces and commas are optional and ignored.
+Numbers are frame counts. Spaces and commas separate commands. Commands can also be written consecutively when their boundaries are unambiguous.
 
 | Command | Meaning |
 | --- | --- |
@@ -24,12 +24,28 @@ Numbers are frame counts. Spaces and commas are optional and ignored.
 `j`, `jr`, `jl`, `r`, `l`, and `w` without a number use 35 frames.
 `o` and `p` do not accept a frame count.
 
+Only `j` combines with an immediately following `l` or `r`. For example, `jrl` is parsed as `jr` followed by `l`, while `j r l` is parsed as three separate commands.
+
 Example:
 
 ```text
 jr35 w10 l5 w2 j20
 jr35w10l5w2j20
 ```
+
+## Processing Pipeline
+
+A received command passes through five phases before it becomes game input.
+
+| Phase | Responsibility | Example |
+| --- | --- | --- |
+| 1. Command reception | `BrokerCommandClient` dequeues one command string from the `radio_control` target | `jr35, l20` |
+| 2. Lexical analysis | `RadioCommandLexer` splits the string into command tokens without executing them | `jr35` / `l20` |
+| 3. Semantic validation | `RadioCommandParser` applies defaults and validates command, frame, and program limits | right jump for 35F / left for 20F |
+| 4. Execution plan generation | Valid tokens are converted into `RadioStep` objects containing only the required input flags and frame count | `Jump + Right, 35F` |
+| 5. Frame execution | `RadioProgram` applies each step, releases all inputs for one frame, and then advances to the next step | input 35F / release 1F / input 20F / release 1F |
+
+The lexer only determines command boundaries. For example, `jr` is one token, while `j,r` becomes two tokens: `j` and `r`. Validation and game-input behavior belong to the later phases.
 
 ## Limits
 
@@ -69,3 +85,13 @@ Restart the game after editing the file.
 `35` frames stays exact.
 
 `Radio Control` and `Radio Debug` can also be toggled from the main menu or pause menu.
+
+## Tests
+
+The tests cover lexer command boundaries, semantic validation, generated input flags, and frame-by-frame execution without loading Jump King.
+
+[Test case matrix](TEST_CASES.md)
+
+```text
+dotnet test RadioControlMod.Tests/RadioControlMod.Tests.csproj
+```

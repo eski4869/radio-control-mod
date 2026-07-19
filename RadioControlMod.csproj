@@ -53,6 +53,9 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ModEntry.cs" />
+    <Compile Include="RadioCommandCompiler.cs" />
+    <Compile Include="RadioCommandLexer.cs" />
+    <Compile Include="RadioProgram.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
