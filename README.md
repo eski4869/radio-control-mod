@@ -8,7 +8,7 @@ Radio Control Mod receives short frame-based input programs through JumpKingHttp
 
 ## Command Format
 
-Commands are separated by spaces. Numbers are frame counts.
+Numbers are frame counts. Spaces and commas are optional and ignored.
 
 | Command | Meaning |
 | --- | --- |
@@ -18,24 +18,30 @@ Commands are separated by spaces. Numbers are frame counts.
 | `r10` | Hold right for 10 frames |
 | `l10` | Hold left for 10 frames |
 | `w60` | Wait for 60 frames |
+| `o` | Press Snake |
+| `p` | Press Boots |
 
 `j`, `jr`, `jl`, `r`, `l`, and `w` without a number use 35 frames.
+`o` and `p` do not accept a frame count.
 
 Example:
 
 ```text
 jr35 w10 l5 w2 j20
+jr35w10l5w2j20
 ```
 
 ## Limits
 
 | Limit | Value |
 | --- | --- |
-| Commands per message | 20 |
-| Frames per command | 600 |
-| Total frames per message | 1800 |
+| Commands per message | 32 |
+| Jump frames per command | 300 |
+| Move frames per command | 300 |
+| Wait frames per command | 300 |
+| Total frames per message | 1200 |
 
-If any token is invalid, the whole message is rejected.
+If any command is invalid, the whole message is rejected.
 
 ## HTTP Example
 

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Text;
 using System.Xml.Serialization;
 using EntityComponent;
 using HarmonyLib;
@@ -308,18 +309,26 @@ namespace RadioControlMod
         private static bool _left;
         private static bool _right;
         private static bool _jump;
+        private static bool _boots;
+        private static bool _snake;
         private static bool _pressedLeft;
         private static bool _pressedRight;
         private static bool _pressedJump;
+        private static bool _pressedBoots;
+        private static bool _pressedSnake;
 
-        public static void Set(bool left, bool right, bool jump)
+        public static void Set(bool left, bool right, bool jump, bool boots, bool snake)
         {
             _pressedLeft = left && !_left;
             _pressedRight = right && !_right;
             _pressedJump = jump && !_jump;
+            _pressedBoots = boots && !_boots;
+            _pressedSnake = snake && !_snake;
             _left = left;
             _right = right;
             _jump = jump;
+            _boots = boots;
+            _snake = snake;
         }
 
         public static void Clear()
@@ -327,14 +336,18 @@ namespace RadioControlMod
             _left = false;
             _right = false;
             _jump = false;
+            _boots = false;
+            _snake = false;
             _pressedLeft = false;
             _pressedRight = false;
             _pressedJump = false;
+            _pressedBoots = false;
+            _pressedSnake = false;
         }
 
         public static void ApplyHeld(ref PadState state)
         {
-            if (!_left && !_right && !_jump)
+            if (!_left && !_right && !_jump && !_boots && !_snake)
             {
                 return;
             }
@@ -364,11 +377,21 @@ namespace RadioControlMod
             {
                 state.jump = true;
             }
+
+            if (_boots)
+            {
+                state.boots = true;
+            }
+
+            if (_snake)
+            {
+                state.snake = true;
+            }
         }
 
         public static void ApplyPressed(ref PadState state)
         {
-            if (!_pressedLeft && !_pressedRight && !_pressedJump)
+            if (!_pressedLeft && !_pressedRight && !_pressedJump && !_pressedBoots && !_pressedSnake)
             {
                 return;
             }
@@ -398,8 +421,17 @@ namespace RadioControlMod
             {
                 state.jump = true;
             }
-        }
 
+            if (_pressedBoots)
+            {
+                state.boots = true;
+            }
+
+            if (_pressedSnake)
+            {
+                state.snake = true;
+            }
+        }
     }
 
     internal sealed class RadioProgram
@@ -408,6 +440,7 @@ namespace RadioControlMod
         private readonly string _source;
         private int _index;
         private int _remainingFrames;
+        private int _releaseFrames;
 
         public RadioProgram(List<RadioStep> steps, string source)
         {
@@ -451,6 +484,11 @@ namespace RadioControlMod
                     return "Done";
                 }
 
+                if (_releaseFrames > 0)
+                {
+                    return "release " + _releaseFrames + "f";
+                }
+
                 return _steps[_index].Name + " " + _remainingFrames + "f";
             }
         }
@@ -463,8 +501,14 @@ namespace RadioControlMod
                 return;
             }
 
+            if (_releaseFrames > 0)
+            {
+                RadioVirtualInput.Clear();
+                return;
+            }
+
             RadioStep step = _steps[_index];
-            RadioVirtualInput.Set(step.Left, step.Right, step.Jump);
+            RadioVirtualInput.Set(step.Left, step.Right, step.Jump, step.Boots, step.Snake);
         }
 
         public void AdvanceOneFrame()
@@ -474,10 +518,37 @@ namespace RadioControlMod
                 return;
             }
 
+            if (_releaseFrames > 0)
+            {
+                _releaseFrames--;
+
+                if (_releaseFrames > 0)
+                {
+                    return;
+                }
+
+                _index++;
+
+                if (!IsComplete)
+                {
+                    _remainingFrames = _steps[_index].Frames;
+                }
+
+                return;
+            }
+
             _remainingFrames--;
 
             if (_remainingFrames > 0)
             {
+                return;
+            }
+
+            RadioStep step = _steps[_index];
+
+            if ((step.Jump || step.Left || step.Right || step.Boots || step.Snake) && _index + 1 < _steps.Count)
+            {
+                _releaseFrames = 1;
                 return;
             }
 
@@ -492,13 +563,15 @@ namespace RadioControlMod
 
     internal sealed class RadioStep
     {
-        public RadioStep(string name, int frames, bool left, bool right, bool jump)
+        public RadioStep(string name, int frames, bool left, bool right, bool jump, bool boots, bool snake)
         {
             Name = name;
             Frames = frames;
             Left = left;
             Right = right;
             Jump = jump;
+            Boots = boots;
+            Snake = snake;
         }
 
         public string Name { get; private set; }
@@ -506,14 +579,18 @@ namespace RadioControlMod
         public bool Left { get; private set; }
         public bool Right { get; private set; }
         public bool Jump { get; private set; }
+        public bool Boots { get; private set; }
+        public bool Snake { get; private set; }
     }
 
     internal static class RadioCommandParser
     {
         private const int DefaultFrames = 35;
-        private const int MaxCommandsPerMessage = 20;
-        private const int MaxFramesPerCommand = 600;
-        private const int MaxTotalFramesPerMessage = 1800;
+        private const int MaxCommandsPerMessage = 32;
+        private const int MaxJumpFrames = 300;
+        private const int MaxMoveFrames = 300;
+        private const int MaxWaitFrames = 300;
+        private const int MaxTotalFramesPerMessage = 1200;
         private static readonly Random Random = new Random();
 
         public static bool TryParse(string text, out RadioProgram program, out string error)
@@ -521,46 +598,35 @@ namespace RadioControlMod
             program = null;
             error = null;
 
-            text = (text ?? string.Empty).Trim().ToLowerInvariant();
+            string source = (text ?? string.Empty).Trim().ToLowerInvariant();
+            string command = Normalize(source);
 
-            if (text.Length == 0)
+            if (command.Length == 0)
             {
                 error = "empty command";
-                return false;
-            }
-
-            string[] tokens = text.Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-            if (tokens.Length == 0)
-            {
-                error = "empty command";
-                return false;
-            }
-
-            if (tokens.Length > MaxCommandsPerMessage)
-            {
-                error = "too many commands";
                 return false;
             }
 
             List<RadioStep> steps = new List<RadioStep>();
             int totalFrames = 0;
+            int index = 0;
 
-            for (int i = 0; i < tokens.Length; i++)
+            while (index < command.Length)
             {
+                if (steps.Count >= MaxCommandsPerMessage)
+                {
+                    error = "too many commands";
+                    return false;
+                }
+
                 RadioStep step;
+                int nextIndex;
 
-                if (!TryParseToken(tokens[i], out step))
+                if (!TryParseStep(command, index, out step, out nextIndex, out error))
                 {
-                    error = "invalid token: " + tokens[i];
                     return false;
                 }
 
-                if (step.Frames > MaxFramesPerCommand)
-                {
-                    error = "too many frames: " + tokens[i];
-                    return false;
-                }
 
                 totalFrames += step.Frames;
 
@@ -571,67 +637,128 @@ namespace RadioControlMod
                 }
 
                 steps.Add(step);
+                index = nextIndex;
             }
 
-            program = new RadioProgram(steps, text);
+            program = new RadioProgram(steps, source);
             return true;
         }
 
-        private static bool TryParseToken(string token, out RadioStep step)
+        private static string Normalize(string text)
         {
-            step = null;
+            StringBuilder builder = new StringBuilder(text.Length);
 
-            if (token.StartsWith("jr", StringComparison.Ordinal))
+            for (int i = 0; i < text.Length; i++)
             {
-                return TryMakeStep(token, 2, true, true, false, out step);
+                char c = text[i];
+
+                if (char.IsWhiteSpace(c) || c == ',')
+                {
+                    continue;
+                }
+
+                builder.Append(c);
             }
 
-            if (token.StartsWith("jl", StringComparison.Ordinal))
-            {
-                return TryMakeStep(token, 2, true, false, true, out step);
-            }
-
-            if (token.StartsWith("j", StringComparison.Ordinal))
-            {
-                return TryMakeStep(token, 1, true, false, false, out step);
-            }
-
-            if (token.StartsWith("r", StringComparison.Ordinal))
-            {
-                return TryMakeStep(token, 1, false, true, false, out step);
-            }
-
-            if (token.StartsWith("l", StringComparison.Ordinal))
-            {
-                return TryMakeStep(token, 1, false, false, true, out step);
-            }
-
-            if (token.StartsWith("w", StringComparison.Ordinal))
-            {
-                return TryMakeStep(token, 1, false, false, false, out step);
-            }
-
-            return false;
+            return builder.ToString();
         }
 
-        private static bool TryMakeStep(
-            string token,
-            int prefixLength,
-            bool jump,
-            bool right,
-            bool left,
-            out RadioStep step
+        private static bool TryParseStep(
+            string command,
+            int index,
+            out RadioStep step,
+            out int nextIndex,
+            out string error
         )
         {
             step = null;
-            int frames = DefaultFrames;
+            nextIndex = index;
+            error = null;
 
-            if (token.Length > prefixLength)
+            char c = command[index];
+
+            if (IsInputChar(c))
             {
-                if (!int.TryParse(token.Substring(prefixLength), out frames) || frames <= 0)
+                return TryParseInputStep(command, index, out step, out nextIndex, out error);
+            }
+
+            if (c == 'w')
+            {
+                int frames;
+
+                if (!TryReadFrames(command, index + 1, DefaultFrames, MaxWaitFrames, out frames, out nextIndex))
                 {
+                    error = "too many frames: w";
                     return false;
                 }
+
+                step = new RadioStep("w", frames, false, false, false, false, false);
+                return true;
+            }
+
+            if (c == 'o' || c == 'p')
+            {
+                nextIndex = index + 1;
+
+                if (nextIndex < command.Length && char.IsDigit(command[nextIndex]))
+                {
+                    error = c + " does not take frames";
+                    return false;
+                }
+
+                step = new RadioStep(c.ToString(), 1, false, false, false, c == 'p', c == 'o');
+                return true;
+            }
+
+            error = "invalid command";
+            return false;
+        }
+
+        private static bool TryParseInputStep(
+            string command,
+            int index,
+            out RadioStep step,
+            out int nextIndex,
+            out string error
+        )
+        {
+            step = null;
+            nextIndex = index;
+            error = null;
+
+            int start = index;
+            bool jump = false;
+            bool left = false;
+            bool right = false;
+
+            while (nextIndex < command.Length && IsInputChar(command[nextIndex]))
+            {
+                char c = command[nextIndex];
+
+                if (c == 'j')
+                {
+                    jump = true;
+                }
+                else if (c == 'l')
+                {
+                    left = true;
+                }
+                else if (c == 'r')
+                {
+                    right = true;
+                }
+
+                nextIndex++;
+            }
+
+            int frames;
+            int nameEnd = nextIndex;
+            int maxFrames = jump ? MaxJumpFrames : MaxMoveFrames;
+
+            if (!TryReadFrames(command, nextIndex, DefaultFrames, maxFrames, out frames, out nextIndex))
+            {
+                error = "too many frames: " + command.Substring(start, nextIndex - start);
+                return false;
             }
 
             if (jump && frames != DefaultFrames)
@@ -642,14 +769,49 @@ namespace RadioControlMod
                 {
                     frames = 1;
                 }
-                else if (frames > MaxFramesPerCommand)
+                else if (frames > maxFrames)
                 {
-                    frames = MaxFramesPerCommand;
+                    frames = maxFrames;
                 }
             }
 
-            step = new RadioStep(token.Substring(0, prefixLength), frames, left, right, jump);
+            step = new RadioStep(command.Substring(start, nameEnd - start), frames, left, right, jump, false, false);
             return true;
+        }
+
+        private static bool TryReadFrames(
+            string command,
+            int index,
+            int defaultFrames,
+            int maxFrames,
+            out int frames,
+            out int nextIndex
+        )
+        {
+            frames = defaultFrames;
+            nextIndex = index;
+
+            while (nextIndex < command.Length && char.IsDigit(command[nextIndex]))
+            {
+                nextIndex++;
+            }
+
+            if (nextIndex == index)
+            {
+                return true;
+            }
+
+            if (!int.TryParse(command.Substring(index, nextIndex - index), out frames) || frames <= 0)
+            {
+                return false;
+            }
+
+            return frames <= maxFrames;
+        }
+
+        private static bool IsInputChar(char c)
+        {
+            return c == 'j' || c == 'l' || c == 'r';
         }
 
         private static int SampleDiscreteLaplace(double alpha)
@@ -739,6 +901,7 @@ namespace RadioControlMod
 
         public static string DisplayText { get; private set; }
         public static float MessageSeconds { get; private set; }
+        private static bool _forceDisplay;
 
         public static bool HasDisplay
         {
@@ -752,6 +915,11 @@ namespace RadioControlMod
         public static bool IsRunning
         {
             get { return _program != null; }
+        }
+
+        public static bool ShouldDrawDisplay
+        {
+            get { return HasDisplay && (ModEntry.IsDebugEnabled || _forceDisplay); }
         }
 
         public static void UpdateInputFrame()
@@ -783,6 +951,7 @@ namespace RadioControlMod
             }
 
             _program.ApplyCurrentInput();
+            _forceDisplay = false;
             DisplayText = "Radio " + _program.StepIndex + "/" + _program.StepCount + ": " + _program.Status;
             MessageSeconds = 1.2f;
 
@@ -790,6 +959,7 @@ namespace RadioControlMod
 
             if (_program.IsComplete)
             {
+                _forceDisplay = false;
                 DisplayText = "Radio done";
                 MessageSeconds = 2f;
                 _program = null;
@@ -805,6 +975,7 @@ namespace RadioControlMod
         {
             RadioVirtualInput.Clear();
             _program = null;
+            _forceDisplay = false;
         }
 
         private static void TryStartNextProgram()
@@ -821,14 +992,32 @@ namespace RadioControlMod
 
             if (!RadioCommandParser.TryParse(command, out parsed, out error))
             {
-                DisplayText = "Radio rejected: " + error;
-                MessageSeconds = 2f;
+                if (ShouldShowReject(error))
+                {
+                    _forceDisplay = true;
+                    DisplayText = "Radio rejected: " + error;
+                    MessageSeconds = 4f;
+                }
+
                 return;
             }
 
             _program = parsed;
+            _forceDisplay = false;
             DisplayText = "Radio start: " + parsed.Source;
             MessageSeconds = 2f;
+        }
+
+        private static bool ShouldShowReject(string error)
+        {
+            if (string.IsNullOrEmpty(error))
+            {
+                return false;
+            }
+
+            return error.StartsWith("too many", StringComparison.Ordinal) ||
+                error.StartsWith("program too long", StringComparison.Ordinal) ||
+                error.EndsWith("does not take frames", StringComparison.Ordinal);
         }
 
         private static void DiscardPendingCommands()
@@ -881,7 +1070,7 @@ namespace RadioControlMod
         {
             DrawRajikonMode();
 
-            if (!ModEntry.IsDebugEnabled || !RadioControlRuntime.HasDisplay)
+            if (!RadioControlRuntime.ShouldDrawDisplay)
             {
                 return;
             }
