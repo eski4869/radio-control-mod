@@ -6,6 +6,21 @@ Radio Control Mod receives short frame-based input programs through JumpKingHttp
 
 `radio_control`
 
+Single-button menu-style input uses a separate target:
+
+`menu_control`
+
+| Command | Button |
+| --- | --- |
+| `up` | Up |
+| `down` | Down |
+| `confirm` | Confirm |
+| `jump` | Jump |
+| `pause` | Pause |
+| `cancel` | Cancel |
+
+Each command produces one pressed-button input and can be used at any point.
+
 ## Command Format
 
 Numbers are frame counts. Spaces and commas separate commands. Commands can also be written consecutively when their boundaries are unambiguous.
@@ -66,6 +81,16 @@ http://127.0.0.1:8081/command?target=radio_control&command=jr35%20w10%20l5
 ```
 
 The HTTP server is provided by JumpKingHttpCommandBroker.
+
+Menu example:
+
+```text
+http://127.0.0.1:8081/command?target=menu_control&command=down
+http://127.0.0.1:8081/command?target=menu_control&command=confirm
+http://127.0.0.1:8081/command?target=menu_control&command=jump
+http://127.0.0.1:8081/command?target=menu_control&command=pause
+http://127.0.0.1:8081/command?target=menu_control&command=cancel
+```
 
 ## Settings
 

@@ -21,6 +21,7 @@ namespace RadioControlMod
     public static class ModEntry
     {
         internal const string CommandTarget = "radio_control";
+        internal const string MenuCommandTarget = "menu_control";
         private const string SettingsFileName = "eski4869.RadioControlMod.Settings.xml";
 
         private static Harmony _harmony;
@@ -33,6 +34,7 @@ namespace RadioControlMod
             EnsurePreferencesLoaded();
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
+            BrokerCommandClient.Register(MenuCommandTarget);
         }
 
         [OnLevelStart]
@@ -41,6 +43,7 @@ namespace RadioControlMod
             EnsurePreferencesLoaded();
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
+            BrokerCommandClient.Register(MenuCommandTarget);
             RadioControlOverlay.EnsureAdded();
         }
 
@@ -142,6 +145,14 @@ namespace RadioControlMod
                     typeof(InputComponentUpdatePatch),
                     "Prefix"
                 );
+                MethodInfo gameUpdate = AccessTools.Method(
+                    typeof(Game1),
+                    "Update"
+                );
+                MethodInfo gameUpdatePrefix = AccessTools.Method(
+                    typeof(GameUpdatePatch),
+                    "Prefix"
+                );
                 MethodInfo padStatePostfix = AccessTools.Method(
                     typeof(ControllerManagerPadStatePatch),
                     "Postfix"
@@ -154,6 +165,8 @@ namespace RadioControlMod
                     getPressedPadState == null ||
                     inputComponentUpdate == null ||
                     inputComponentUpdatePrefix == null ||
+                    gameUpdate == null ||
+                    gameUpdatePrefix == null ||
                     padStatePostfix == null ||
                     pressedPadStatePostfix == null)
                 {
@@ -164,6 +177,7 @@ namespace RadioControlMod
                 }
 
                 _harmony = new Harmony("eski4869.RadioControlMod");
+                _harmony.Patch(gameUpdate, prefix: new HarmonyMethod(gameUpdatePrefix));
                 _harmony.Patch(inputComponentUpdate, prefix: new HarmonyMethod(inputComponentUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
@@ -295,11 +309,69 @@ namespace RadioControlMod
         }
     }
 
+    internal static class GameUpdatePatch
+    {
+        public static void Prefix()
+        {
+            MenuControlRuntime.BeginFrame();
+        }
+    }
+
     internal static class ControllerManagerPressedPadStatePatch
     {
         public static void Postfix(ref PadState __result)
         {
+            MenuControlRuntime.ApplyPressed(ref __result);
             RadioVirtualInput.ApplyPressed(ref __result);
+        }
+    }
+
+    internal static class MenuControlRuntime
+    {
+        private static string _command;
+
+        public static void BeginFrame()
+        {
+            _command = null;
+            BrokerCommandClient.Register(ModEntry.MenuCommandTarget);
+
+            if (!BrokerCommandClient.TryDequeue(
+                ModEntry.MenuCommandTarget,
+                out _command
+            ))
+            {
+                _command = null;
+            }
+        }
+
+        public static void ApplyPressed(ref PadState state)
+        {
+            if (_command == null)
+            {
+                return;
+            }
+
+            switch (_command.Trim().ToLowerInvariant())
+            {
+                case "up":
+                    state.up = true;
+                    break;
+                case "down":
+                    state.down = true;
+                    break;
+                case "confirm":
+                    state.confirm = true;
+                    break;
+                case "jump":
+                    state.jump = true;
+                    break;
+                case "pause":
+                    state.pause = true;
+                    break;
+                case "cancel":
+                    state.cancel = true;
+                    break;
+            }
         }
     }
 
@@ -864,11 +936,12 @@ namespace RadioControlMod
         private static MethodInfo _tryDequeueMethod;
         private static DateTime _nextResolveUtc = DateTime.MinValue;
         private static bool _loggedMissingBroker;
-        private static bool _registered;
+        private static readonly HashSet<string> RegisteredTargets =
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         public static void Register(string target)
         {
-            if (_registered)
+            if (RegisteredTargets.Contains(target))
             {
                 return;
             }
@@ -881,7 +954,7 @@ namespace RadioControlMod
             try
             {
                 _registerMethod.Invoke(_registry, new object[] { target });
-                _registered = true;
+                RegisteredTargets.Add(target);
             }
             catch (Exception ex)
             {
@@ -895,12 +968,12 @@ namespace RadioControlMod
         {
             command = null;
 
-            if (!_registered)
+            if (!RegisteredTargets.Contains(target))
             {
                 Register(target);
             }
 
-            if (!_registered || !Resolve())
+            if (!RegisteredTargets.Contains(target) || !Resolve())
             {
                 return false;
             }
