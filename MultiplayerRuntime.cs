@@ -16,7 +16,6 @@ namespace RadioControlMod
 {
     internal static class MultiplayerRuntime
     {
-        private const float Player2LaneOffset = 240f;
         private static PlayerEntity _player2;
         private static bool _levelStarted;
         private static bool _raceComplete;
@@ -176,10 +175,7 @@ namespace RadioControlMod
                 BodyComp player2Body = player2.GetComponent<BodyComp>();
                 if (player2Body != null)
                 {
-                    player2Body.Position = new Vector2(
-                        player1Body.Position.X + Player2LaneOffset,
-                        player1Body.Position.Y
-                    );
+                    player2Body.Position = player1Body.Position;
                     player2Body.Velocity = Vector2.Zero;
                 }
 
@@ -501,6 +497,53 @@ namespace RadioControlMod
             if (__state != NotPlayer2)
             {
                 CameraScreenField.SetValue(null, __state);
+            }
+        }
+    }
+
+    internal static class Player2TintPatch
+    {
+        private static readonly FieldInfo PlayerSpriteField = AccessTools.Field(
+            typeof(PlayerEntity),
+            "m_sprite"
+        );
+        private static readonly Color Player2Color = new Color(190, 120, 255);
+
+        public static void Prefix(PlayerEntity __instance, out Player2TintState __state)
+        {
+            __state = null;
+            if (!MultiplayerRuntime.IsPlayer2(__instance) || PlayerSpriteField == null)
+            {
+                return;
+            }
+
+            Sprite sprite = PlayerSpriteField.GetValue(__instance) as Sprite;
+            if (sprite == null)
+            {
+                return;
+            }
+
+            __state = new Player2TintState(sprite, sprite.GetColor());
+            sprite.SetColor(Player2Color);
+        }
+
+        public static void Postfix(Player2TintState __state)
+        {
+            if (__state != null)
+            {
+                __state.Sprite.SetColor(__state.OriginalColor);
+            }
+        }
+
+        internal sealed class Player2TintState
+        {
+            public readonly Sprite Sprite;
+            public readonly Color OriginalColor;
+
+            public Player2TintState(Sprite sprite, Color originalColor)
+            {
+                Sprite = sprite;
+                OriginalColor = originalColor;
             }
         }
     }

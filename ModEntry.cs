@@ -239,6 +239,15 @@ namespace RadioControlMod
                     typeof(Player2SaveUpdatePatch),
                     "Prefix"
                 );
+                MethodInfo playerDraw = AccessTools.Method(typeof(PlayerEntity), "Draw");
+                MethodInfo player2TintPrefix = AccessTools.Method(
+                    typeof(Player2TintPatch),
+                    "Prefix"
+                );
+                MethodInfo player2TintPostfix = AccessTools.Method(
+                    typeof(Player2TintPatch),
+                    "Postfix"
+                );
                 MethodInfo entityUpdateComponents = AccessTools.Method(
                     typeof(Entity),
                     "UpdateComponents"
@@ -276,6 +285,9 @@ namespace RadioControlMod
                     inputStatePrefix == null ||
                     playerUpdate == null ||
                     playerUpdatePrefix == null ||
+                    playerDraw == null ||
+                    player2TintPrefix == null ||
+                    player2TintPostfix == null ||
                     entityUpdateComponents == null ||
                     player2ScreenPrefix == null ||
                     player2ScreenPostfix == null ||
@@ -297,6 +309,11 @@ namespace RadioControlMod
                 _harmony.Patch(inputGetState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(inputGetPressedState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(playerUpdate, prefix: new HarmonyMethod(playerUpdatePrefix));
+                _harmony.Patch(
+                    playerDraw,
+                    prefix: new HarmonyMethod(player2TintPrefix),
+                    postfix: new HarmonyMethod(player2TintPostfix)
+                );
                 _harmony.Patch(
                     entityUpdateComponents,
                     prefix: new HarmonyMethod(player2ScreenPrefix),
