@@ -692,7 +692,7 @@ namespace RadioControlMod
         {
             BodyComp body = player.GetComponent<BodyComp>();
             int centerX = body == null ? Width / 2 : body.GetHitbox().Center.X;
-            int sourceX = Math.Max(0, Math.Min(Width - HalfWidth, centerX - HalfWidth / 2));
+            int sourceX = centerX < HalfWidth ? 0 : HalfWidth;
             return new Rectangle(sourceX, 0, HalfWidth, Height);
         }
 
