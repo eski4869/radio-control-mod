@@ -38,6 +38,7 @@ namespace RadioControlMod
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
+            EskiUiClient.Resolve();
         }
 
         [OnLevelStart]
@@ -47,6 +48,7 @@ namespace RadioControlMod
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
+            EskiUiClient.Resolve();
             RadioControlOverlay.EnsureAdded();
             MultiplayerRuntime.OnLevelStart();
         }
@@ -1011,19 +1013,6 @@ namespace RadioControlMod
         private static readonly PlayerCommandChannel[] Players =
             new PlayerCommandChannel[] { Player1, Player2, Player3, Player4 };
 
-        public static string DisplayText { get; private set; }
-        public static float MessageSeconds { get; private set; }
-        private static bool _forceDisplay;
-
-        public static bool HasDisplay
-        {
-            get
-            {
-                return IsRunning ||
-                    (MessageSeconds > 0f && !string.IsNullOrEmpty(DisplayText));
-            }
-        }
-
         public static bool IsRunning
         {
             get
@@ -1038,11 +1027,6 @@ namespace RadioControlMod
 
                 return false;
             }
-        }
-
-        public static bool ShouldDrawDisplay
-        {
-            get { return HasDisplay && (ModEntry.IsDebugEnabled || _forceDisplay); }
         }
 
         public static void UpdateInputFrame()
@@ -1084,11 +1068,6 @@ namespace RadioControlMod
             }
         }
 
-        public static void UpdateUi(float delta)
-        {
-            TickMessage(delta);
-        }
-
         public static void Stop()
         {
             RadioVirtualInput.ClearAll();
@@ -1096,7 +1075,6 @@ namespace RadioControlMod
             {
                 Players[i].Stop();
             }
-            _forceDisplay = false;
         }
 
         public static void StopAdditionalPlayers()
@@ -1109,9 +1087,7 @@ namespace RadioControlMod
 
         public static void ShowConfigurationError(string error)
         {
-            _forceDisplay = true;
-            DisplayText = error;
-            MessageSeconds = 6f;
+            EskiUiClient.Notify(error, 6000);
         }
 
         private static void DispatchOnePendingCommand()
@@ -1170,17 +1146,13 @@ namespace RadioControlMod
 
             if (accepted)
             {
-                _forceDisplay = false;
-                DisplayText = "Radio queued: " + command;
-                MessageSeconds = 2f;
+                NotifyDebug("Radio queued: " + command, 2000);
                 return;
             }
 
             if (ShouldShowReject(error))
             {
-                _forceDisplay = true;
-                DisplayText = "Radio rejected: " + error;
-                MessageSeconds = 4f;
+                EskiUiClient.Notify("Radio rejected: " + error, 4000);
             }
         }
 
@@ -1210,14 +1182,14 @@ namespace RadioControlMod
             }
         }
 
-        private static void TickMessage(float delta)
+        private static void NotifyDebug(string message, int durationMs)
         {
-            if (MessageSeconds <= 0f)
+            if (!ModEntry.IsDebugEnabled)
             {
                 return;
             }
 
-            MessageSeconds = Math.Max(0f, MessageSeconds - delta);
+            EskiUiClient.Notify(message, durationMs);
         }
 
         private sealed class PlayerCommandChannel
@@ -1226,6 +1198,7 @@ namespace RadioControlMod
             private readonly string _label;
             private readonly Queue<RadioProgram> _programs = new Queue<RadioProgram>();
             private RadioProgram _program;
+            private int _lastNotifiedStep;
 
             public PlayerCommandChannel(PlayerTargets target, string label)
             {
@@ -1255,6 +1228,7 @@ namespace RadioControlMod
                 if (_program == null && _programs.Count > 0)
                 {
                     _program = _programs.Dequeue();
+                    _lastNotifiedStep = 0;
                 }
 
                 if (_program == null)
@@ -1280,23 +1254,30 @@ namespace RadioControlMod
                     );
                 }
 
-                _forceDisplay = false;
-                DisplayText = "Radio " + _label + " " + _program.StepIndex + "/" +
-                    _program.StepCount + ": " + _program.Status;
-                MessageSeconds = 1.2f;
+                if (_lastNotifiedStep != _program.StepIndex)
+                {
+                    _lastNotifiedStep = _program.StepIndex;
+                    NotifyDebug(
+                        "Radio " + _label + " " + _program.StepIndex + "/" +
+                            _program.StepCount + ": " + _program.Status,
+                        1200
+                    );
+                }
+
                 _program.AdvanceOneFrame();
 
                 if (_program.IsComplete)
                 {
-                    DisplayText = "Radio " + _label + " done";
-                    MessageSeconds = 2f;
+                    NotifyDebug("Radio " + _label + " done", 2000);
                     _program = null;
+                    _lastNotifiedStep = 0;
                 }
             }
 
             public void Stop()
             {
                 _program = null;
+                _lastNotifiedStep = 0;
                 _programs.Clear();
                 RadioVirtualInput.Clear(_target);
             }
@@ -1306,7 +1287,6 @@ namespace RadioControlMod
     public sealed class RadioControlOverlay : Entity, IForeground
     {
         private static RadioControlOverlay _instance;
-        private Texture2D _pixel;
 
         public static void EnsureAdded()
         {
@@ -1324,59 +1304,9 @@ namespace RadioControlMod
             EntityManager.instance.AddObject(_instance);
         }
 
-        protected override void Update(float delta)
-        {
-            RadioControlRuntime.UpdateUi(delta);
-        }
-
         public void ForegroundDraw()
         {
             DrawRajikonMode();
-
-            if (!RadioControlRuntime.ShouldDrawDisplay)
-            {
-                return;
-            }
-
-            SpriteFont font = GetFont();
-            if (font == null)
-            {
-                return;
-            }
-
-            EnsurePixel();
-            if (_pixel == null)
-            {
-                return;
-            }
-
-            string text = RadioControlRuntime.DisplayText ?? string.Empty;
-            Vector2 size = font.MeasureString(text);
-            int paddingX = 8;
-            int paddingY = 5;
-            int width = (int)Math.Ceiling(size.X) + paddingX * 2;
-            int height = (int)Math.Ceiling(size.Y) + paddingY * 2;
-            int x = 480 - width - 10;
-            int y = 10;
-
-            Game1.spriteBatch.Draw(
-                _pixel,
-                new Rectangle(x, y, width, height),
-                new Color((byte)0, (byte)0, (byte)0, (byte)185)
-            );
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y, width, 1), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y + height - 1, width, 1), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y, 1, height), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x + width - 1, y, 1, height), Color.Gray);
-
-            TextHelper.DrawString(
-                font,
-                text,
-                new Vector2(x + paddingX, y + paddingY),
-                Color.White,
-                Vector2.Zero,
-                true
-            );
         }
 
         private void DrawRajikonMode()
@@ -1404,27 +1334,10 @@ namespace RadioControlMod
 
         protected override void OnDestroy()
         {
-            if (_pixel != null)
-            {
-                _pixel.Dispose();
-                _pixel = null;
-            }
-
             if (ReferenceEquals(_instance, this))
             {
                 _instance = null;
             }
-        }
-
-        private void EnsurePixel()
-        {
-            if (_pixel != null || Game1.instance == null)
-            {
-                return;
-            }
-
-            _pixel = new Texture2D(Game1.instance.GraphicsDevice, 1, 1);
-            _pixel.SetData(new[] { Color.White });
         }
 
         private static SpriteFont GetFont()
@@ -1440,6 +1353,75 @@ namespace RadioControlMod
             }
 
             return Game1.instance.contentManager.font.MenuFont;
+        }
+    }
+
+    internal static class EskiUiClient
+    {
+        private static Action<string, int> _notify;
+
+        public static void Resolve()
+        {
+            if (_notify != null)
+            {
+                return;
+            }
+
+            try
+            {
+                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length; i++)
+                {
+                    if (!string.Equals(
+                        assemblies[i].GetName().Name,
+                        "EskiUI",
+                        StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    Type apiType = assemblies[i].GetType("EskiUI", false);
+                    if (apiType == null)
+                    {
+                        return;
+                    }
+
+                    MethodInfo notifyMethod = apiType.GetMethod(
+                        "Notify",
+                        new[] { typeof(string), typeof(int) }
+                    );
+                    if (notifyMethod != null)
+                    {
+                        _notify = (Action<string, int>)Delegate.CreateDelegate(
+                            typeof(Action<string, int>),
+                            notifyMethod
+                        );
+                    }
+
+                    return;
+                }
+            }
+            catch
+            {
+                _notify = null;
+            }
+        }
+
+        public static void Notify(string message, int durationMs)
+        {
+            Resolve();
+            if (_notify == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _notify(message, durationMs);
+            }
+            catch
+            {
+            }
         }
     }
 

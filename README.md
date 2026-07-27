@@ -141,13 +141,15 @@ is queued for both players. A name that matches neither list is ignored.
 
 Selecting a multiplayer player count reloads this settings file, so the allow lists
 can be changed without restarting the game. Invalid settings keep the current mode
-and show an error in the Radio Control overlay.
+and show an EskiUI notification.
 
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
 
 `Radio Control` and `Radio Debug` can be toggled from the main menu or pause menu.
 The mode selector provides `Single Player`, `2 Players`, and `4 Players`.
+When EskiUI is installed, Radio Control sends status and error notifications through
+its shared notification UI. It does not register any EskiUI commands.
 
 ## Multiplayer Mode
 
