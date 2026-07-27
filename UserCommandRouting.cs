@@ -8,7 +8,9 @@ namespace RadioControlMod
     {
         None = 0,
         Player1 = 1,
-        Player2 = 2
+        Player2 = 2,
+        Player3 = 4,
+        Player4 = 8
     }
 
     internal sealed class UserCommandRouter
@@ -16,23 +18,56 @@ namespace RadioControlMod
         private readonly UserPatternList _singlePlayer1;
         private readonly UserPatternList _multiplayerPlayer1;
         private readonly UserPatternList _multiplayerPlayer2;
+        private readonly UserPatternList _fourPlayer1;
+        private readonly UserPatternList _fourPlayer2;
+        private readonly UserPatternList _fourPlayer3;
+        private readonly UserPatternList _fourPlayer4;
 
         public UserCommandRouter(
             string singlePlayer1,
             string multiplayerPlayer1,
             string multiplayerPlayer2
+        ) : this(
+            singlePlayer1,
+            multiplayerPlayer1,
+            multiplayerPlayer2,
+            string.Empty,
+            string.Empty,
+            string.Empty,
+            string.Empty
+        )
+        {
+        }
+
+        public UserCommandRouter(
+            string singlePlayer1,
+            string multiplayerPlayer1,
+            string multiplayerPlayer2,
+            string fourPlayer1,
+            string fourPlayer2,
+            string fourPlayer3,
+            string fourPlayer4
         )
         {
             _singlePlayer1 = new UserPatternList(singlePlayer1);
             _multiplayerPlayer1 = new UserPatternList(multiplayerPlayer1);
             _multiplayerPlayer2 = new UserPatternList(multiplayerPlayer2);
+            _fourPlayer1 = new UserPatternList(fourPlayer1);
+            _fourPlayer2 = new UserPatternList(fourPlayer2);
+            _fourPlayer3 = new UserPatternList(fourPlayer3);
+            _fourPlayer4 = new UserPatternList(fourPlayer4);
         }
 
         public PlayerTargets Resolve(bool multiplayerEnabled, string user)
         {
+            return Resolve(multiplayerEnabled ? 2 : 1, user);
+        }
+
+        public PlayerTargets Resolve(int playerCount, string user)
+        {
             string normalizedUser = NormalizeUser(user);
 
-            if (!multiplayerEnabled)
+            if (playerCount == 1)
             {
                 if (normalizedUser == null || _singlePlayer1.IsMatch(normalizedUser))
                 {
@@ -49,14 +84,39 @@ namespace RadioControlMod
 
             PlayerTargets targets = PlayerTargets.None;
 
-            if (_multiplayerPlayer1.IsMatch(normalizedUser))
+            if (playerCount == 2)
+            {
+                if (_multiplayerPlayer1.IsMatch(normalizedUser))
+                {
+                    targets |= PlayerTargets.Player1;
+                }
+
+                if (_multiplayerPlayer2.IsMatch(normalizedUser))
+                {
+                    targets |= PlayerTargets.Player2;
+                }
+
+                return targets;
+            }
+
+            if (_fourPlayer1.IsMatch(normalizedUser))
             {
                 targets |= PlayerTargets.Player1;
             }
 
-            if (_multiplayerPlayer2.IsMatch(normalizedUser))
+            if (_fourPlayer2.IsMatch(normalizedUser))
             {
                 targets |= PlayerTargets.Player2;
+            }
+
+            if (_fourPlayer3.IsMatch(normalizedUser))
+            {
+                targets |= PlayerTargets.Player3;
+            }
+
+            if (_fourPlayer4.IsMatch(normalizedUser))
+            {
+                targets |= PlayerTargets.Player4;
             }
 
             return targets;

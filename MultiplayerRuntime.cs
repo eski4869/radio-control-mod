@@ -16,11 +16,14 @@ namespace RadioControlMod
 {
     internal static class MultiplayerRuntime
     {
-        private static PlayerEntity _player2;
+        private const int MaximumPlayers = 4;
+        private static PlayerEntity _player1;
+        private static readonly PlayerEntity[] AdditionalPlayers =
+            new PlayerEntity[MaximumPlayers - 1];
         private static bool _levelStarted;
         private static bool _raceComplete;
         private static bool _blockBehavioursSynchronized;
-        private static bool _creatingPlayer2;
+        private static int _creatingPlayerNumber;
         private static readonly FieldInfo BlockBehaviourLookupField = AccessTools.Field(
             typeof(BodyComp),
             "m_blockBehaviourLookup"
@@ -30,68 +33,131 @@ namespace RadioControlMod
         {
             get
             {
-                return ModEntry.IsMultiplayerEnabled && _levelStarted && !_raceComplete &&
-                    _player2 != null && _player2.IsAlive;
+                if (ModEntry.PlayerCount <= 1 || !_levelStarted || _raceComplete)
+                {
+                    return false;
+                }
+
+                for (int playerNumber = 2; playerNumber <= ModEntry.PlayerCount; playerNumber++)
+                {
+                    PlayerEntity player = GetPlayer(playerNumber);
+                    if (player == null || !player.IsAlive)
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
             }
         }
 
-        public static PlayerEntity Player2
+        public static int PlayerCount
         {
-            get { return IsActive ? _player2 : null; }
+            get { return IsActive ? ModEntry.PlayerCount : 1; }
+        }
+
+        public static PlayerEntity GetPlayer(int playerNumber)
+        {
+            if (playerNumber == 1)
+            {
+                if (_player1 != null && _player1.IsAlive)
+                {
+                    return _player1;
+                }
+
+                _player1 = EntityManager.instance == null ? null :
+                    EntityManager.instance.Find<PlayerEntity>();
+                return _player1;
+            }
+
+            int index = playerNumber - 2;
+            return index >= 0 && index < AdditionalPlayers.Length ?
+                AdditionalPlayers[index] : null;
         }
 
         public static void OnLevelStart()
         {
+            _player1 = EntityManager.instance == null ? null :
+                EntityManager.instance.Find<PlayerEntity>();
             _levelStarted = true;
             _raceComplete = false;
 
             if (ModEntry.IsMultiplayerEnabled)
             {
-                StartPlayer2();
+                StartAdditionalPlayers(ModEntry.PlayerCount);
             }
         }
 
         public static void OnLevelEnd()
         {
             _levelStarted = false;
-            StopPlayer2();
+            StopAdditionalPlayers();
+            _player1 = null;
         }
 
-        public static void SetEnabled(bool enabled)
+        public static void SetPlayerCount(int playerCount)
         {
-            if (!enabled)
+            if (playerCount <= 1)
             {
-                StopPlayer2();
+                StopAdditionalPlayers();
                 return;
             }
 
             _raceComplete = false;
             if (_levelStarted)
             {
-                StartPlayer2();
+                StartAdditionalPlayers(playerCount);
             }
         }
 
-        public static bool IsPlayer2(PlayerEntity player)
+        public static int GetPlayerNumber(PlayerEntity player)
         {
-            return player != null && ReferenceEquals(player, _player2);
+            if (player == null)
+            {
+                return 0;
+            }
+
+            for (int i = 0; i < AdditionalPlayers.Length; i++)
+            {
+                if (ReferenceEquals(player, AdditionalPlayers[i]))
+                {
+                    return i + 2;
+                }
+            }
+
+            return ReferenceEquals(player, GetPlayer(1)) ? 1 : 0;
         }
 
-        public static bool IsPlayer2(InputComponent input)
+        public static int GetPlayerNumber(InputComponent input)
         {
-            return input != null && input.gameObject != null &&
-                ReferenceEquals(input.gameObject, _player2);
+            return input == null || input.gameObject == null ? 0 :
+                GetPlayerNumber(input.gameObject as PlayerEntity);
         }
 
-        public static bool UsesPlayer2Sprites(PlayerEntity player)
+        public static int GetSpritePlayerNumber(PlayerEntity player)
         {
-            return _creatingPlayer2 || IsPlayer2(player);
+            return _creatingPlayerNumber > 1 ? _creatingPlayerNumber : GetPlayerNumber(player);
+        }
+
+        public static PlayerTargets GetPlayerTarget(int playerNumber)
+        {
+            switch (playerNumber)
+            {
+                case 2:
+                    return PlayerTargets.Player2;
+                case 3:
+                    return PlayerTargets.Player3;
+                case 4:
+                    return PlayerTargets.Player4;
+                default:
+                    return PlayerTargets.Player1;
+            }
         }
 
         public static void FinishRace()
         {
             _raceComplete = true;
-            StopPlayer2();
+            StopAdditionalPlayers();
         }
 
         public static void SynchronizeBlockBehaviours()
@@ -102,65 +168,69 @@ namespace RadioControlMod
                 return;
             }
 
-            PlayerEntity player1 = EntityManager.instance.Find<PlayerEntity>();
-            PlayerEntity player2 = Player2;
+            PlayerEntity player1 = GetPlayer(1);
             BodyComp player1Body = player1 == null ? null : player1.GetComponent<BodyComp>();
-            BodyComp player2Body = player2 == null ? null : player2.GetComponent<BodyComp>();
-            if (player1Body == null || player2Body == null)
+            if (player1Body == null)
             {
                 return;
             }
 
             IDictionary sourceLookup = BlockBehaviourLookupField.GetValue(player1Body) as IDictionary;
-            IDictionary targetLookup = BlockBehaviourLookupField.GetValue(player2Body) as IDictionary;
-            if (sourceLookup == null || targetLookup == null)
+            if (sourceLookup == null)
             {
                 return;
             }
 
-            foreach (DictionaryEntry entry in sourceLookup)
+            for (int playerNumber = 2; playerNumber <= ModEntry.PlayerCount; playerNumber++)
             {
-                Type blockType = entry.Key as Type;
-                IBlockBehaviour sourceBehaviour = entry.Value as IBlockBehaviour;
-                if (blockType == null || sourceBehaviour == null ||
-                    targetLookup.Contains(blockType))
+                PlayerEntity player = GetPlayer(playerNumber);
+                BodyComp body = player == null ? null : player.GetComponent<BodyComp>();
+                IDictionary targetLookup = body == null ? null :
+                    BlockBehaviourLookupField.GetValue(body) as IDictionary;
+                if (targetLookup == null)
                 {
-                    continue;
+                    return;
                 }
 
-                IBlockBehaviour player2Behaviour = CreateBlockBehaviour(
-                    sourceBehaviour,
-                    player2,
-                    player2Body
-                );
-                if (player2Behaviour == null)
+                foreach (DictionaryEntry entry in sourceLookup)
                 {
-                    JumpKing.Program.crashLog.AddErrorMessage(
-                        "RadioControl multiplayer cannot construct block behaviour: " +
-                        sourceBehaviour.GetType().FullName
+                    Type blockType = entry.Key as Type;
+                    IBlockBehaviour sourceBehaviour = entry.Value as IBlockBehaviour;
+                    if (blockType == null || sourceBehaviour == null ||
+                        targetLookup.Contains(blockType))
+                    {
+                        continue;
+                    }
+
+                    IBlockBehaviour behaviour = CreateBlockBehaviour(
+                        sourceBehaviour,
+                        player,
+                        body
                     );
-                    continue;
-                }
+                    if (behaviour == null)
+                    {
+                        JumpKing.Program.crashLog.AddErrorMessage(
+                            "RadioControl multiplayer cannot construct block behaviour: " +
+                            sourceBehaviour.GetType().FullName
+                        );
+                        continue;
+                    }
 
-                player2Body.RegisterBlockBehaviour(blockType, player2Behaviour);
+                    body.RegisterBlockBehaviour(blockType, behaviour);
+                }
             }
 
             _blockBehavioursSynchronized = true;
         }
 
-        private static void StartPlayer2()
+        private static void StartAdditionalPlayers(int playerCount)
         {
-            if (_player2 != null && _player2.IsAlive)
-            {
-                return;
-            }
-
             if (EntityManager.instance == null)
             {
                 return;
             }
 
-            PlayerEntity player1 = EntityManager.instance.Find<PlayerEntity>();
+            PlayerEntity player1 = GetPlayer(1);
             if (player1 == null)
             {
                 return;
@@ -172,61 +242,93 @@ namespace RadioControlMod
                 return;
             }
 
-            try
+            TrimAdditionalPlayers(playerCount);
+
+            for (int playerNumber = 2; playerNumber <= playerCount; playerNumber++)
             {
-                PlayerEntity player2;
-                _creatingPlayer2 = true;
+                int index = playerNumber - 2;
+                if (AdditionalPlayers[index] != null && AdditionalPlayers[index].IsAlive)
+                {
+                    continue;
+                }
+
                 try
                 {
-                    player2 = new PlayerEntity();
+                    _creatingPlayerNumber = playerNumber;
+                    PlayerEntity player = new PlayerEntity();
+                    AdditionalPlayers[index] = player;
+                    _blockBehavioursSynchronized = false;
+
+                    BodyComp body = player.GetComponent<BodyComp>();
+                    if (body != null)
+                    {
+                        body.Position = player1Body.Position;
+                        body.Velocity = Vector2.Zero;
+                    }
+
+                    Component[] components = player.GetComponents();
+                    for (int i = 0; i < components.Length; i++)
+                    {
+                        if (components[i].GetType().FullName == "JumpKing.Player.CameraFollowComp")
+                        {
+                            components[i].Enabled = false;
+                            break;
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    AdditionalPlayers[index] = null;
+                    JumpKing.Program.crashLog.AddErrorMessage(
+                        "RadioControl player " + playerNumber + " start failed: " + ex.Message
+                    );
                 }
                 finally
                 {
-                    _creatingPlayer2 = false;
+                    _creatingPlayerNumber = 0;
                 }
-
-                _player2 = player2;
-                _blockBehavioursSynchronized = false;
-
-                BodyComp player2Body = player2.GetComponent<BodyComp>();
-                if (player2Body != null)
-                {
-                    player2Body.Position = player1Body.Position;
-                    player2Body.Velocity = Vector2.Zero;
-                }
-
-                Component[] components = player2.GetComponents();
-                for (int i = 0; i < components.Length; i++)
-                {
-                    if (components[i].GetType().FullName == "JumpKing.Player.CameraFollowComp")
-                    {
-                        components[i].Enabled = false;
-                        break;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _player2 = null;
-                JumpKing.Program.crashLog.AddErrorMessage(
-                    "RadioControl multiplayer start failed: " + ex.Message
-                );
             }
         }
 
-        private static void StopPlayer2()
+        private static void StopAdditionalPlayers()
         {
             RadioVirtualInput.Clear(PlayerTargets.Player2);
+            RadioVirtualInput.Clear(PlayerTargets.Player3);
+            RadioVirtualInput.Clear(PlayerTargets.Player4);
             MultiplayerSplitRenderer.Release();
 
-            if (_player2 != null && _player2.IsAlive)
+            for (int i = 0; i < AdditionalPlayers.Length; i++)
             {
-                _player2.Destroy();
+                if (AdditionalPlayers[i] != null && AdditionalPlayers[i].IsAlive)
+                {
+                    AdditionalPlayers[i].Destroy();
+                }
+
+                AdditionalPlayers[i] = null;
             }
 
-            _player2 = null;
             _blockBehavioursSynchronized = false;
-            Player2SpriteFactory.Release();
+            PlayerSpriteFactory.Release();
+        }
+
+        private static void TrimAdditionalPlayers(int playerCount)
+        {
+            for (int playerNumber = Math.Max(2, playerCount + 1);
+                playerNumber <= MaximumPlayers;
+                playerNumber++)
+            {
+                int index = playerNumber - 2;
+                RadioVirtualInput.Clear(GetPlayerTarget(playerNumber));
+                if (AdditionalPlayers[index] != null && AdditionalPlayers[index].IsAlive)
+                {
+                    AdditionalPlayers[index].Destroy();
+                }
+
+                AdditionalPlayers[index] = null;
+            }
+
+            _blockBehavioursSynchronized = false;
+            MultiplayerSplitRenderer.Release();
         }
 
         private static IBlockBehaviour CreateBlockBehaviour(
@@ -452,7 +554,7 @@ namespace RadioControlMod
         }
     }
 
-    internal static class Player2InputStatePatch
+    internal static class AdditionalPlayerInputStatePatch
     {
         public static bool Prefix(
             InputComponent __instance,
@@ -460,28 +562,32 @@ namespace RadioControlMod
             ref InputComponent.State __result
         )
         {
-            if (!MultiplayerRuntime.IsPlayer2(__instance))
+            int playerNumber = MultiplayerRuntime.GetPlayerNumber(__instance);
+            if (playerNumber <= 1)
             {
                 return true;
             }
 
             bool pressed = __originalMethod.Name == "GetPressedState";
-            __result = RadioVirtualInput.GetPlayer2State(pressed);
+            __result = RadioVirtualInput.GetPlayerState(
+                MultiplayerRuntime.GetPlayerTarget(playerNumber),
+                pressed
+            );
             return false;
         }
     }
 
-    internal static class Player2SaveUpdatePatch
+    internal static class AdditionalPlayerSaveUpdatePatch
     {
         public static bool Prefix(PlayerEntity __instance)
         {
-            return !MultiplayerRuntime.IsPlayer2(__instance);
+            return MultiplayerRuntime.GetPlayerNumber(__instance) <= 1;
         }
     }
 
-    internal static class Player2ScreenUpdatePatch
+    internal static class AdditionalPlayerScreenUpdatePatch
     {
-        private const int NotPlayer2 = -1;
+        private const int NotAdditionalPlayer = -1;
         private static readonly FieldInfo CameraScreenField = AccessTools.Field(
             typeof(Camera),
             "_current_screen"
@@ -490,16 +596,16 @@ namespace RadioControlMod
         public static void Prefix(Entity __instance, out int __state)
         {
             PlayerEntity player = __instance as PlayerEntity;
-            if (!MultiplayerRuntime.IsPlayer2(player) || CameraScreenField == null)
+            if (MultiplayerRuntime.GetPlayerNumber(player) <= 1 || CameraScreenField == null)
             {
-                __state = NotPlayer2;
+                __state = NotAdditionalPlayer;
                 return;
             }
 
             BodyComp body = player.GetComponent<BodyComp>();
             if (body == null)
             {
-                __state = NotPlayer2;
+                __state = NotAdditionalPlayer;
                 return;
             }
 
@@ -511,26 +617,29 @@ namespace RadioControlMod
 
         public static void Postfix(int __state)
         {
-            if (__state != NotPlayer2)
+            if (__state != NotAdditionalPlayer)
             {
                 CameraScreenField.SetValue(null, __state);
             }
         }
     }
 
-    internal static class Player2SpritePatch
+    internal static class AdditionalPlayerSpritePatch
     {
         public static void Prefix(PlayerEntity __instance, ref Sprite p_sprite)
         {
-            if (MultiplayerRuntime.UsesPlayer2Sprites(__instance))
+            int playerNumber = MultiplayerRuntime.GetSpritePlayerNumber(__instance);
+            if (playerNumber > 1)
             {
-                p_sprite = Player2SpriteFactory.Get(p_sprite);
+                p_sprite = PlayerSpriteFactory.Get(p_sprite, playerNumber);
             }
         }
     }
 
-    internal static class Player2SpriteFactory
+    internal static class PlayerSpriteFactory
     {
+        private const int FirstColoredPlayer = 2;
+        private const int ColoredPlayerCount = 3;
         private static readonly Type LayeredSpriteType = AccessTools.TypeByName(
             "JumpKing.XnaWrappers.LayeredSprite"
         );
@@ -544,54 +653,68 @@ namespace RadioControlMod
                 LayeredSpriteType,
                 new Type[] { typeof(Sprite), typeof(Sprite[]) }
             );
-        private static readonly Dictionary<Sprite, Sprite> Sprites =
-            new Dictionary<Sprite, Sprite>();
-        private static readonly Dictionary<Sprite, LayeredSpriteCopy> LayeredSprites =
-            new Dictionary<Sprite, LayeredSpriteCopy>();
-        private static readonly Dictionary<Texture2D, Texture2D> Textures =
-            new Dictionary<Texture2D, Texture2D>();
+        private static readonly Dictionary<Sprite, Sprite>[] Sprites =
+            CreateSpriteCaches();
+        private static readonly Dictionary<Sprite, LayeredSpriteCopy>[] LayeredSprites =
+            CreateLayeredSpriteCaches();
+        private static readonly Dictionary<Texture2D, Texture2D>[] Textures =
+            CreateTextureCaches();
 
-        public static Sprite Get(Sprite source)
+        public static Sprite Get(Sprite source, int playerNumber)
         {
             if (source == null)
             {
                 return null;
             }
 
+            int paletteIndex = playerNumber - FirstColoredPlayer;
+            if (paletteIndex < 0 || paletteIndex >= ColoredPlayerCount)
+            {
+                return source;
+            }
+
             if (LayeredSpriteType != null && LayeredSpriteType.IsInstanceOfType(source))
             {
-                return GetLayeredSprite(source);
+                return GetLayeredSprite(source, playerNumber, paletteIndex);
             }
 
             Sprite sprite;
-            if (Sprites.TryGetValue(source, out sprite))
+            if (Sprites[paletteIndex].TryGetValue(source, out sprite))
             {
                 return sprite;
             }
 
             sprite = Sprite.CreateSpriteWithCenter(
-                source.texture == null ? null : GetTexture(source.texture),
+                source.texture == null ? null :
+                    GetTexture(source.texture, playerNumber, paletteIndex),
                 source.source,
                 source.center
             );
             sprite.SetColor(source.GetColor());
-            Sprites.Add(source, sprite);
+            Sprites[paletteIndex].Add(source, sprite);
             return sprite;
         }
 
         public static void Release()
         {
-            foreach (Texture2D texture in Textures.Values)
+            for (int i = 0; i < ColoredPlayerCount; i++)
             {
-                texture.Dispose();
-            }
+                foreach (Texture2D texture in Textures[i].Values)
+                {
+                    texture.Dispose();
+                }
 
-            Sprites.Clear();
-            LayeredSprites.Clear();
-            Textures.Clear();
+                Sprites[i].Clear();
+                LayeredSprites[i].Clear();
+                Textures[i].Clear();
+            }
         }
 
-        private static Sprite GetLayeredSprite(Sprite source)
+        private static Sprite GetLayeredSprite(
+            Sprite source,
+            int playerNumber,
+            int paletteIndex
+        )
         {
             if (LayeredSpritesProperty == null || LayeredSpriteConstructor == null)
             {
@@ -605,7 +728,8 @@ namespace RadioControlMod
             }
 
             LayeredSpriteCopy cached;
-            if (LayeredSprites.TryGetValue(source, out cached) && cached.Matches(sourceLayers))
+            if (LayeredSprites[paletteIndex].TryGetValue(source, out cached) &&
+                cached.Matches(sourceLayers))
             {
                 return cached.Sprite;
             }
@@ -618,21 +742,25 @@ namespace RadioControlMod
                 sourceSprites[i] = sourceSprite;
                 if (i > 0)
                 {
-                    extraLayers[i - 1] = Get(sourceSprite);
+                    extraLayers[i - 1] = Get(sourceSprite, playerNumber);
                 }
             }
 
             Sprite sprite = (Sprite)LayeredSpriteConstructor.Invoke(
-                new object[] { Get(sourceSprites[0]), extraLayers }
+                new object[] { Get(sourceSprites[0], playerNumber), extraLayers }
             );
-            LayeredSprites[source] = new LayeredSpriteCopy(sprite, sourceSprites);
+            LayeredSprites[paletteIndex][source] = new LayeredSpriteCopy(sprite, sourceSprites);
             return sprite;
         }
 
-        private static Texture2D GetTexture(Texture2D source)
+        private static Texture2D GetTexture(
+            Texture2D source,
+            int playerNumber,
+            int paletteIndex
+        )
         {
             Texture2D texture;
-            if (Textures.TryGetValue(source, out texture))
+            if (Textures[paletteIndex].TryGetValue(source, out texture))
             {
                 return texture;
             }
@@ -651,7 +779,7 @@ namespace RadioControlMod
                 int maximum = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
                 int minimum = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
                 int chroma = maximum - minimum;
-                pixels[i] = new Color(minimum + chroma * 3 / 4, minimum, maximum, pixel.A);
+                pixels[i] = RecolorBody(pixel, playerNumber, minimum, maximum, chroma);
             }
 
             texture = new Texture2D(
@@ -660,8 +788,72 @@ namespace RadioControlMod
                 source.Height
             );
             texture.SetData(pixels);
-            Textures.Add(source, texture);
+            Textures[paletteIndex].Add(source, texture);
             return texture;
+        }
+
+        private static Color RecolorBody(
+            Color source,
+            int playerNumber,
+            int minimum,
+            int maximum,
+            int chroma
+        )
+        {
+            switch (playerNumber)
+            {
+                case 2:
+                    return new Color(
+                        minimum + chroma * 3 / 4,
+                        minimum,
+                        maximum,
+                        source.A
+                    );
+                case 3:
+                    return new Color(maximum, maximum, minimum, source.A);
+                case 4:
+                    return new Color(
+                        minimum,
+                        maximum,
+                        minimum + chroma / 4,
+                        source.A
+                    );
+                default:
+                    return source;
+            }
+        }
+
+        private static Dictionary<Sprite, Sprite>[] CreateSpriteCaches()
+        {
+            var caches = new Dictionary<Sprite, Sprite>[ColoredPlayerCount];
+            for (int i = 0; i < caches.Length; i++)
+            {
+                caches[i] = new Dictionary<Sprite, Sprite>();
+            }
+
+            return caches;
+        }
+
+        private static Dictionary<Sprite, LayeredSpriteCopy>[] CreateLayeredSpriteCaches()
+        {
+            var caches = new Dictionary<Sprite, LayeredSpriteCopy>[ColoredPlayerCount];
+            for (int i = 0; i < caches.Length; i++)
+            {
+                caches[i] = new Dictionary<Sprite, LayeredSpriteCopy>();
+            }
+
+            return caches;
+        }
+
+        private static Dictionary<Texture2D, Texture2D>[] CreateTextureCaches()
+        {
+            var caches = new Dictionary<Texture2D, Texture2D>[ColoredPlayerCount];
+            for (int i = 0; i < caches.Length; i++)
+            {
+                caches[i] = new Dictionary<Texture2D, Texture2D>();
+            }
+
+            return caches;
         }
 
         private static bool IsBodyBlue(Color pixel)
@@ -730,40 +922,51 @@ namespace RadioControlMod
                 return;
             }
 
-            PlayerEntity player2 = MultiplayerRuntime.Player2;
-            if (player2 == null || ___m_endings == null)
+            if (___m_endings == null)
             {
                 return;
             }
 
-            for (int i = 0; i < ___m_endings.Count; i++)
+            for (int playerNumber = 2;
+                playerNumber <= MultiplayerRuntime.PlayerCount;
+                playerNumber++)
             {
-                IEnding ending = ___m_endings[i];
-                if (!ending.CheckWin(player2))
+                PlayerEntity player = MultiplayerRuntime.GetPlayer(playerNumber);
+                if (player == null)
                 {
                     continue;
                 }
 
-                PlayerEntity player1 = EntityManager.instance.Find<PlayerEntity>();
-                BodyComp player1Body = player1 == null ? null : player1.GetComponent<BodyComp>();
-                BodyComp player2Body = player2.GetComponent<BodyComp>();
-
-                if (player1Body == null || player2Body == null)
+                for (int i = 0; i < ___m_endings.Count; i++)
                 {
+                    IEnding ending = ___m_endings[i];
+                    if (!ending.CheckWin(player))
+                    {
+                        continue;
+                    }
+
+                    PlayerEntity player1 = MultiplayerRuntime.GetPlayer(1);
+                    BodyComp player1Body = player1 == null ? null :
+                        player1.GetComponent<BodyComp>();
+                    BodyComp winnerBody = player.GetComponent<BodyComp>();
+
+                    if (player1Body == null || winnerBody == null)
+                    {
+                        return;
+                    }
+
+                    player1Body.Position = winnerBody.Position;
+                    player1Body.Velocity = winnerBody.Velocity;
+
+                    if (ending.CheckWin(player1))
+                    {
+                        __0 = ending;
+                        __result = true;
+                        MultiplayerRuntime.FinishRace();
+                    }
+
                     return;
                 }
-
-                player1Body.Position = player2Body.Position;
-                player1Body.Velocity = player2Body.Velocity;
-
-                if (ending.CheckWin(player1))
-                {
-                    __0 = ending;
-                    __result = true;
-                    MultiplayerRuntime.FinishRace();
-                }
-
-                return;
             }
         }
     }
@@ -781,6 +984,7 @@ namespace RadioControlMod
         private const int Width = 480;
         private const int Height = 360;
         private const int HalfWidth = Width / 2;
+        private const int HalfHeight = Height / 2;
         private static readonly FieldInfo CameraScreenField = AccessTools.Field(
             typeof(Camera),
             "_current_screen"
@@ -791,11 +995,11 @@ namespace RadioControlMod
             new Type[] { typeof(Type) }
         );
 
-        private static RenderTarget2D _player1Target;
-        private static RenderTarget2D _player2Target;
+        private static readonly RenderTarget2D[] PlayerTargets = new RenderTarget2D[4];
         private static bool _drawingPass;
-        private static bool _player2CameraInitialized;
-        private static int _player2CameraScreen;
+        private static readonly bool[] CameraInitialized = new bool[4];
+        private static readonly int[] CameraScreens = new int[4];
+        private static readonly Vector2[] CameraOffsets = new Vector2[4];
 
         public static bool PrefixDraw(JumpGame game)
         {
@@ -805,15 +1009,23 @@ namespace RadioControlMod
             }
 
             Game1 host = Game1.instance;
-            PlayerEntity player1 = EntityManager.instance.Find<PlayerEntity>();
-            PlayerEntity player2 = MultiplayerRuntime.Player2;
-            if (host == null || player1 == null || player2 == null || CameraScreenField == null)
+            int playerCount = MultiplayerRuntime.PlayerCount;
+            if (host == null || CameraScreenField == null ||
+                (playerCount != 2 && playerCount != 4))
             {
                 return true;
             }
 
+            for (int playerNumber = 1; playerNumber <= playerCount; playerNumber++)
+            {
+                if (MultiplayerRuntime.GetPlayer(playerNumber) == null)
+                {
+                    return true;
+                }
+            }
+
             GraphicsDevice graphics = host.GraphicsDevice;
-            EnsureTargets(graphics);
+            EnsureTargets(graphics, playerCount);
 
             RenderTargetBinding[] previousTargets = graphics.GetRenderTargets();
             int previousScreen = Camera.CurrentScreen;
@@ -823,8 +1035,19 @@ namespace RadioControlMod
 
             try
             {
-                DrawView(game, host, graphics, _player1Target, previousScreen);
-                DrawView(game, host, graphics, _player2Target, GetPlayerScreen(player2));
+                for (int playerNumber = 1; playerNumber <= playerCount; playerNumber++)
+                {
+                    PlayerEntity player = MultiplayerRuntime.GetPlayer(playerNumber);
+                    int screen = previousScreen;
+                    Vector2 offset = previousOffset;
+                    if (playerNumber > 1)
+                    {
+                        screen = GetPlayerScreen(player, playerNumber, out offset);
+                    }
+
+                    Camera.Offset = offset;
+                    DrawView(game, host, graphics, PlayerTargets[playerNumber - 1], screen);
+                }
             }
             finally
             {
@@ -835,18 +1058,14 @@ namespace RadioControlMod
                 host.StartBatch();
             }
 
-            Game1.spriteBatch.Draw(
-                _player1Target,
-                new Rectangle(0, 0, HalfWidth, Height),
-                GetPlayerViewport(player1),
-                Color.White
-            );
-            Game1.spriteBatch.Draw(
-                _player2Target,
-                new Rectangle(HalfWidth, 0, HalfWidth, Height),
-                GetPlayerViewport(player2),
-                Color.White
-            );
+            if (playerCount == 2)
+            {
+                DrawTwoPlayerViews();
+            }
+            else
+            {
+                DrawFourPlayerViews();
+            }
 
             return false;
         }
@@ -861,10 +1080,48 @@ namespace RadioControlMod
 
         public static void Release()
         {
-            DisposeTarget(ref _player1Target);
-            DisposeTarget(ref _player2Target);
-            _player2CameraInitialized = false;
-            _player2CameraScreen = 0;
+            for (int i = 0; i < PlayerTargets.Length; i++)
+            {
+                DisposeTarget(ref PlayerTargets[i]);
+                CameraInitialized[i] = false;
+                CameraScreens[i] = 0;
+                CameraOffsets[i] = Vector2.Zero;
+            }
+        }
+
+        private static void DrawTwoPlayerViews()
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                PlayerEntity player = MultiplayerRuntime.GetPlayer(i + 1);
+                Game1.spriteBatch.Draw(
+                    PlayerTargets[i],
+                    new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
+                    GetPlayerViewport(player),
+                    Color.White
+                );
+            }
+        }
+
+        private static void DrawFourPlayerViews()
+        {
+            var source = new Rectangle(0, 0, Width, Height);
+            for (int i = 0; i < 4; i++)
+            {
+                int column = i % 2;
+                int row = i / 2;
+                Game1.spriteBatch.Draw(
+                    PlayerTargets[i],
+                    new Rectangle(
+                        column * HalfWidth,
+                        row * HalfHeight,
+                        HalfWidth,
+                        HalfHeight
+                    ),
+                    source,
+                    Color.White
+                );
+            }
         }
 
         private static void DrawView(
@@ -892,22 +1149,31 @@ namespace RadioControlMod
             }
         }
 
-        private static int GetPlayerScreen(PlayerEntity player)
+        private static int GetPlayerScreen(
+            PlayerEntity player,
+            int playerNumber,
+            out Vector2 offset
+        )
         {
             BodyComp body = player.GetComponent<BodyComp>();
             if (body == null)
             {
+                offset = Camera.Offset;
                 return Camera.CurrentScreen;
             }
 
-            int player1Screen = Camera.CurrentScreen;
-            if (!_player2CameraInitialized)
+            int index = playerNumber - 1;
+            int hostScreen = Camera.CurrentScreen;
+            Vector2 hostOffset = Camera.Offset;
+            if (!CameraInitialized[index])
             {
-                _player2CameraScreen = player1Screen;
-                _player2CameraInitialized = true;
+                CameraScreens[index] = hostScreen;
+                CameraOffsets[index] = hostOffset;
+                CameraInitialized[index] = true;
             }
 
-            CameraScreenField.SetValue(null, _player2CameraScreen);
+            CameraScreenField.SetValue(null, CameraScreens[index]);
+            Camera.Offset = CameraOffsets[index];
 
             try
             {
@@ -925,25 +1191,26 @@ namespace RadioControlMod
                     );
                 }
 
-                _player2CameraScreen = Camera.CurrentScreen;
-                return _player2CameraScreen;
+                CameraScreens[index] = Camera.CurrentScreen;
+                CameraOffsets[index] = Camera.Offset;
+                offset = CameraOffsets[index];
+                return CameraScreens[index];
             }
             finally
             {
-                CameraScreenField.SetValue(null, player1Screen);
+                CameraScreenField.SetValue(null, hostScreen);
+                Camera.Offset = hostOffset;
             }
         }
 
-        private static void EnsureTargets(GraphicsDevice graphics)
+        private static void EnsureTargets(GraphicsDevice graphics, int playerCount)
         {
-            if (_player1Target == null || _player1Target.IsDisposed)
+            for (int i = 0; i < playerCount; i++)
             {
-                _player1Target = new RenderTarget2D(graphics, Width, Height);
-            }
-
-            if (_player2Target == null || _player2Target.IsDisposed)
-            {
-                _player2Target = new RenderTarget2D(graphics, Width, Height);
+                if (PlayerTargets[i] == null || PlayerTargets[i].IsDisposed)
+                {
+                    PlayerTargets[i] = new RenderTarget2D(graphics, Width, Height);
+                }
             }
         }
 

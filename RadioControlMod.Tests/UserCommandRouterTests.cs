@@ -8,6 +8,16 @@ namespace RadioControlMod.Tests
     {
         private static readonly UserCommandRouter DefaultRouter =
             new UserCommandRouter("*", "[a-m]*", "[n-z]*");
+        private static readonly UserCommandRouter FourPlayerRouter =
+            new UserCommandRouter(
+                "*",
+                "[a-m]*",
+                "[n-z]*",
+                "[a-f]*",
+                "[g-m]*",
+                "[n-s]*",
+                "[t-z]*"
+            );
 
         [TestMethod]
         public void SingleModeWithoutUserTargetsPlayer1()
@@ -40,6 +50,43 @@ namespace RadioControlMod.Tests
         public void MultiplayerModeRoutesInitialRanges(string user, int expected)
         {
             Assert.AreEqual((PlayerTargets)expected, DefaultRouter.Resolve(true, user));
+        }
+
+        [TestMethod]
+        [DataRow("alice", 1)]
+        [DataRow("george", 2)]
+        [DataRow("nancy", 4)]
+        [DataRow("tom", 8)]
+        [DataRow("Z_USER", 8)]
+        public void FourPlayerModeRoutesFourInitialRanges(string user, int expected)
+        {
+            Assert.AreEqual((PlayerTargets)expected, FourPlayerRouter.Resolve(4, user));
+        }
+
+        [TestMethod]
+        public void FourPlayerModeWithoutUserIsIgnored()
+        {
+            Assert.AreEqual(PlayerTargets.None, FourPlayerRouter.Resolve(4, null));
+            Assert.AreEqual(PlayerTargets.None, FourPlayerRouter.Resolve(4, "  "));
+        }
+
+        [TestMethod]
+        public void FourPlayerModeCanTargetMultiplePlayers()
+        {
+            var router = new UserCommandRouter(
+                "*",
+                "*",
+                "*",
+                "eski*",
+                "other",
+                "eski4869",
+                "eski*"
+            );
+
+            Assert.AreEqual(
+                PlayerTargets.Player1 | PlayerTargets.Player3 | PlayerTargets.Player4,
+                router.Resolve(4, "eski4869")
+            );
         }
 
         [TestMethod]

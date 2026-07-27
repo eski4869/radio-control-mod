@@ -115,6 +115,7 @@ http://127.0.0.1:8081/command?target=menu_control&command=cancel
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
   <MultiplayerEnabled>false</MultiplayerEnabled>
+  <FourPlayerEnabled>false</FourPlayerEnabled>
   <SingleMode>
     <Player1Users>*</Player1Users>
   </SingleMode>
@@ -122,10 +123,16 @@ http://127.0.0.1:8081/command?target=menu_control&command=cancel
     <Player1Users>[a-m]*</Player1Users>
     <Player2Users>[n-z]*</Player2Users>
   </MultiplayerMode>
+  <FourPlayerMode>
+    <Player1Users>[a-f]*</Player1Users>
+    <Player2Users>[g-m]*</Player2Users>
+    <Player3Users>[n-s]*</Player3Users>
+    <Player4Users>[t-z]*</Player4Users>
+  </FourPlayerMode>
 </RadioControlPreferences>
 ```
 
-`Player1Users` and `Player2Users` are comma-separated allow lists. They support exact
+The player user fields are comma-separated allow lists. They support exact
 names (`alice`), prefix wildcards (`eski*`), first-character ranges (`[a-m]*`), and
 the all-users wildcard (`*`). Matching is case-insensitive.
 
@@ -133,26 +140,29 @@ In single-player mode, a request without `user` controls Player 1. In multiplaye
 mode, `user` is required. If a name matches both multiplayer lists, the same command
 is queued for both players. A name that matches neither list is ignored.
 
-Turning `Multiplayer Mode` on reloads this settings file, so the allow lists can be
-changed without restarting the game. Invalid settings keep multiplayer disabled and
-show an error in the Radio Control overlay.
+Turning `Multiplayer Mode` or `4 Player Mode` on reloads this settings file, so the
+allow lists can be changed without restarting the game. Invalid settings keep the
+current mode disabled and show an error in the Radio Control overlay.
 
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
 
-`Radio Control`, `Radio Debug`, and `Multiplayer Mode` can be toggled from the main
-menu or pause menu.
+`Radio Control`, `Radio Debug`, `Multiplayer Mode`, and its `4 Player Mode` child
+setting can be toggled from the main menu or pause menu. With Multiplayer enabled,
+Four Player off selects two players and Four Player on selects four players.
 
 ## Multiplayer Mode
 
-Multiplayer mode creates a second player in the right half of a map designed as two
-parallel 240-pixel lanes. Player 1 is drawn in the left half and Player 2 in the
-right half; each half follows its own vertical screen. The first player to satisfy a
+Two-player mode creates a second player and draws the players in left and right
+240-pixel views. Four-player mode creates three additional players and draws four
+240 x 180 views in a 2 x 2 layout. Each view follows its own vertical screen. Player
+colors are blue, purple, yellow, and green; only the blue/cyan body palette is
+recolored, so other sprite details remain intact. The first player to satisfy a
 native ending condition wins, and the normal Jump King ending flow is then used.
-Block behaviours registered on Player 1 by custom block mods are recreated for
-Player 2 when the level begins, so both players use the same loaded block rules.
+Block behaviours registered on Player 1 by custom block mods are recreated for every
+additional player when the level begins, so all players use the same loaded rules.
 
-Player 2 currently receives movement and jump commands (`j`, `jl`, `jr`, `l`, `r`,
+Additional players receive movement and jump commands (`j`, `jl`, `jr`, `l`, `r`,
 and `w`). Player-specific Snake and Boots activation is not provided because those
 systems read the game's shared controller state rather than `InputComponent`.
 

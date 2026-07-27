@@ -4,6 +4,7 @@
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
   <MultiplayerEnabled>false</MultiplayerEnabled>
+  <FourPlayerEnabled>false</FourPlayerEnabled>
   <SingleMode>
     <Player1Users>*</Player1Users>
   </SingleMode>
@@ -11,4 +12,10 @@
     <Player1Users>[a-m]*</Player1Users>
     <Player2Users>[n-z]*</Player2Users>
   </MultiplayerMode>
+  <FourPlayerMode>
+    <Player1Users>[a-f]*</Player1Users>
+    <Player2Users>[g-m]*</Player2Users>
+    <Player3Users>[n-s]*</Player3Users>
+    <Player4Users>[t-z]*</Player4Users>
+  </FourPlayerMode>
 </RadioControlPreferences>

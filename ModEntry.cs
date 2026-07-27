@@ -99,10 +99,33 @@ namespace RadioControlMod
             }
         }
 
+        internal static bool IsFourPlayerEnabled
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                return _preferences.FourPlayerEnabled;
+            }
+        }
+
+        internal static int PlayerCount
+        {
+            get
+            {
+                EnsurePreferencesLoaded();
+                if (!_preferences.MultiplayerEnabled)
+                {
+                    return 1;
+                }
+
+                return _preferences.FourPlayerEnabled ? 4 : 2;
+            }
+        }
+
         internal static PlayerTargets ResolvePlayerTargets(string user)
         {
             EnsurePreferencesLoaded();
-            return _userRouter.Resolve(_preferences.MultiplayerEnabled, user);
+            return _userRouter.Resolve(PlayerCount, user);
         }
 
         internal static void SetEnabled(bool isEnabled)
@@ -159,12 +182,34 @@ namespace RadioControlMod
             _preferences.MultiplayerEnabled = isEnabled;
             SavePreferences();
 
-            if (!isEnabled)
+            RadioControlRuntime.StopAdditionalPlayers();
+            MultiplayerRuntime.SetPlayerCount(PlayerCount);
+            return isEnabled;
+        }
+
+        internal static bool SetFourPlayerEnabled(bool isEnabled)
+        {
+            EnsurePreferencesLoaded();
+
+            if (_preferences.FourPlayerEnabled == isEnabled)
             {
-                RadioControlRuntime.StopPlayer2();
+                return isEnabled;
             }
 
-            MultiplayerRuntime.SetEnabled(isEnabled);
+            if (isEnabled)
+            {
+                string error;
+                if (!TryReloadPreferences(out error))
+                {
+                    RadioControlRuntime.ShowConfigurationError(error);
+                    return false;
+                }
+            }
+
+            _preferences.FourPlayerEnabled = isEnabled;
+            SavePreferences();
+            RadioControlRuntime.StopAdditionalPlayers();
+            MultiplayerRuntime.SetPlayerCount(PlayerCount);
             return isEnabled;
         }
 
@@ -190,6 +235,16 @@ namespace RadioControlMod
         )
         {
             return new RadioMultiplayerToggle();
+        }
+
+        [PauseMenuItemSetting]
+        [MainMenuItemSetting]
+        public static RadioFourPlayerToggle RadioFourPlayerMenu(
+            object factory,
+            JumpKing.PauseMenu.GuiFormat format
+        )
+        {
+            return new RadioFourPlayerToggle();
         }
 
         private static void EnsurePatched()
@@ -231,32 +286,32 @@ namespace RadioControlMod
                     "GetPressedState"
                 );
                 MethodInfo inputStatePrefix = AccessTools.Method(
-                    typeof(Player2InputStatePatch),
+                    typeof(AdditionalPlayerInputStatePatch),
                     "Prefix"
                 );
                 MethodInfo playerUpdate = AccessTools.Method(typeof(PlayerEntity), "Update");
                 MethodInfo playerUpdatePrefix = AccessTools.Method(
-                    typeof(Player2SaveUpdatePatch),
+                    typeof(AdditionalPlayerSaveUpdatePatch),
                     "Prefix"
                 );
                 MethodInfo playerSetSprite = AccessTools.Method(
                     typeof(PlayerEntity),
                     "SetSprite"
                 );
-                MethodInfo player2SpritePrefix = AccessTools.Method(
-                    typeof(Player2SpritePatch),
+                MethodInfo additionalPlayerSpritePrefix = AccessTools.Method(
+                    typeof(AdditionalPlayerSpritePatch),
                     "Prefix"
                 );
                 MethodInfo entityUpdateComponents = AccessTools.Method(
                     typeof(Entity),
                     "UpdateComponents"
                 );
-                MethodInfo player2ScreenPrefix = AccessTools.Method(
-                    typeof(Player2ScreenUpdatePatch),
+                MethodInfo additionalPlayerScreenPrefix = AccessTools.Method(
+                    typeof(AdditionalPlayerScreenUpdatePatch),
                     "Prefix"
                 );
-                MethodInfo player2ScreenPostfix = AccessTools.Method(
-                    typeof(Player2ScreenUpdatePatch),
+                MethodInfo additionalPlayerScreenPostfix = AccessTools.Method(
+                    typeof(AdditionalPlayerScreenUpdatePatch),
                     "Postfix"
                 );
                 MethodInfo jumpGameDraw = AccessTools.Method(typeof(JumpGame), "Draw");
@@ -285,10 +340,10 @@ namespace RadioControlMod
                     playerUpdate == null ||
                     playerUpdatePrefix == null ||
                     playerSetSprite == null ||
-                    player2SpritePrefix == null ||
+                    additionalPlayerSpritePrefix == null ||
                     entityUpdateComponents == null ||
-                    player2ScreenPrefix == null ||
-                    player2ScreenPostfix == null ||
+                    additionalPlayerScreenPrefix == null ||
+                    additionalPlayerScreenPostfix == null ||
                     jumpGameDraw == null ||
                     jumpGameDrawPrefix == null ||
                     checkWin == null ||
@@ -307,11 +362,14 @@ namespace RadioControlMod
                 _harmony.Patch(inputGetState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(inputGetPressedState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(playerUpdate, prefix: new HarmonyMethod(playerUpdatePrefix));
-                _harmony.Patch(playerSetSprite, prefix: new HarmonyMethod(player2SpritePrefix));
+                _harmony.Patch(
+                    playerSetSprite,
+                    prefix: new HarmonyMethod(additionalPlayerSpritePrefix)
+                );
                 _harmony.Patch(
                     entityUpdateComponents,
-                    prefix: new HarmonyMethod(player2ScreenPrefix),
-                    postfix: new HarmonyMethod(player2ScreenPostfix)
+                    prefix: new HarmonyMethod(additionalPlayerScreenPrefix),
+                    postfix: new HarmonyMethod(additionalPlayerScreenPostfix)
                 );
                 _harmony.Patch(jumpGameDraw, prefix: new HarmonyMethod(jumpGameDrawPrefix));
                 _harmony.Patch(checkWin, postfix: new HarmonyMethod(checkWinPostfix));
@@ -345,8 +403,10 @@ namespace RadioControlMod
                         !settingsText.Contains("IsEnabled") ||
                         !settingsText.Contains("IsDebugEnabled") ||
                         !settingsText.Contains("MultiplayerEnabled") ||
+                        !settingsText.Contains("FourPlayerEnabled") ||
                         !settingsText.Contains("SingleMode") ||
-                        !settingsText.Contains("MultiplayerMode");
+                        !settingsText.Contains("MultiplayerMode") ||
+                        !settingsText.Contains("FourPlayerMode");
 
                     var serializer = new XmlSerializer(typeof(RadioControlPreferences));
 
@@ -420,7 +480,11 @@ namespace RadioControlMod
             return new UserCommandRouter(
                 preferences.SingleMode.Player1Users,
                 preferences.MultiplayerMode.Player1Users,
-                preferences.MultiplayerMode.Player2Users
+                preferences.MultiplayerMode.Player2Users,
+                preferences.FourPlayerMode.Player1Users,
+                preferences.FourPlayerMode.Player2Users,
+                preferences.FourPlayerMode.Player3Users,
+                preferences.FourPlayerMode.Player4Users
             );
         }
 
@@ -434,6 +498,11 @@ namespace RadioControlMod
             if (preferences.MultiplayerMode == null)
             {
                 preferences.MultiplayerMode = new MultiplayerModePreferences();
+            }
+
+            if (preferences.FourPlayerMode == null)
+            {
+                preferences.FourPlayerMode = new FourPlayerModePreferences();
             }
         }
 
@@ -460,9 +529,12 @@ namespace RadioControlMod
         public bool IsDebugEnabled { get; set; } = false;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
         public bool MultiplayerEnabled { get; set; } = false;
+        public bool FourPlayerEnabled { get; set; } = false;
         public SingleModePreferences SingleMode { get; set; } = new SingleModePreferences();
         public MultiplayerModePreferences MultiplayerMode { get; set; } =
             new MultiplayerModePreferences();
+        public FourPlayerModePreferences FourPlayerMode { get; set; } =
+            new FourPlayerModePreferences();
     }
 
     public class SingleModePreferences
@@ -510,6 +582,14 @@ namespace RadioControlMod
         }
     }
 
+    public class FourPlayerModePreferences
+    {
+        public string Player1Users { get; set; } = "[a-f]*";
+        public string Player2Users { get; set; } = "[g-m]*";
+        public string Player3Users { get; set; } = "[n-s]*";
+        public string Player4Users { get; set; } = "[t-z]*";
+    }
+
     public class RadioMultiplayerToggle : ITextToggle
     {
         public RadioMultiplayerToggle() : base(ModEntry.IsMultiplayerEnabled)
@@ -524,6 +604,23 @@ namespace RadioControlMod
         protected override void OnToggle()
         {
             OverrideToggle(ModEntry.SetMultiplayerEnabled(toggle));
+        }
+    }
+
+    public class RadioFourPlayerToggle : ITextToggle
+    {
+        public RadioFourPlayerToggle() : base(ModEntry.IsFourPlayerEnabled)
+        {
+        }
+
+        protected override string GetName()
+        {
+            return "  ┗ 4 Player Mode";
+        }
+
+        protected override void OnToggle()
+        {
+            OverrideToggle(ModEntry.SetFourPlayerEnabled(toggle));
         }
     }
 
@@ -615,6 +712,8 @@ namespace RadioControlMod
     {
         private static readonly VirtualPad Player1 = new VirtualPad();
         private static readonly VirtualPad Player2 = new VirtualPad();
+        private static readonly VirtualPad Player3 = new VirtualPad();
+        private static readonly VirtualPad Player4 = new VirtualPad();
 
         public static void Set(
             PlayerTargets target,
@@ -637,6 +736,8 @@ namespace RadioControlMod
         {
             Player1.Clear();
             Player2.Clear();
+            Player3.Clear();
+            Player4.Clear();
         }
 
         public static void ApplyHeld(ref PadState state)
@@ -727,7 +828,7 @@ namespace RadioControlMod
             }
         }
 
-        public static InputComponent.State GetPlayer2State(bool pressed)
+        public static InputComponent.State GetPlayerState(PlayerTargets target, bool pressed)
         {
             var state = new InputComponent.State();
 
@@ -736,15 +837,26 @@ namespace RadioControlMod
                 return state;
             }
 
-            state.left = pressed ? Player2.PressedLeft : Player2.Left;
-            state.right = pressed ? Player2.PressedRight : Player2.Right;
-            state.jump = pressed ? Player2.PressedJump : Player2.Jump;
+            VirtualPad pad = GetPad(target);
+            state.left = pressed ? pad.PressedLeft : pad.Left;
+            state.right = pressed ? pad.PressedRight : pad.Right;
+            state.jump = pressed ? pad.PressedJump : pad.Jump;
             return state;
         }
 
         private static VirtualPad GetPad(PlayerTargets target)
         {
-            return target == PlayerTargets.Player2 ? Player2 : Player1;
+            switch (target)
+            {
+                case PlayerTargets.Player2:
+                    return Player2;
+                case PlayerTargets.Player3:
+                    return Player3;
+                case PlayerTargets.Player4:
+                    return Player4;
+                default:
+                    return Player1;
+            }
         }
 
         private sealed class VirtualPad
@@ -928,6 +1040,12 @@ namespace RadioControlMod
             new PlayerCommandChannel(PlayerTargets.Player1, "P1");
         private static readonly PlayerCommandChannel Player2 =
             new PlayerCommandChannel(PlayerTargets.Player2, "P2");
+        private static readonly PlayerCommandChannel Player3 =
+            new PlayerCommandChannel(PlayerTargets.Player3, "P3");
+        private static readonly PlayerCommandChannel Player4 =
+            new PlayerCommandChannel(PlayerTargets.Player4, "P4");
+        private static readonly PlayerCommandChannel[] Players =
+            new PlayerCommandChannel[] { Player1, Player2, Player3, Player4 };
 
         public static string DisplayText { get; private set; }
         public static float MessageSeconds { get; private set; }
@@ -937,14 +1055,25 @@ namespace RadioControlMod
         {
             get
             {
-                return Player1.IsRunning || Player2.IsRunning ||
+                return IsRunning ||
                     (MessageSeconds > 0f && !string.IsNullOrEmpty(DisplayText));
             }
         }
 
         public static bool IsRunning
         {
-            get { return Player1.IsRunning || Player2.IsRunning; }
+            get
+            {
+                for (int i = 0; i < Players.Length; i++)
+                {
+                    if (Players[i].IsRunning)
+                    {
+                        return true;
+                    }
+                }
+
+                return false;
+            }
         }
 
         public static bool ShouldDrawDisplay
@@ -977,8 +1106,18 @@ namespace RadioControlMod
             }
 
             DispatchOnePendingCommand();
-            Player1.Update();
-            Player2.Update();
+            int playerCount = ModEntry.PlayerCount;
+            for (int i = 0; i < Players.Length; i++)
+            {
+                if (i < playerCount)
+                {
+                    Players[i].Update();
+                }
+                else
+                {
+                    Players[i].Stop();
+                }
+            }
         }
 
         public static void UpdateUi(float delta)
@@ -989,14 +1128,19 @@ namespace RadioControlMod
         public static void Stop()
         {
             RadioVirtualInput.ClearAll();
-            Player1.Stop();
-            Player2.Stop();
+            for (int i = 0; i < Players.Length; i++)
+            {
+                Players[i].Stop();
+            }
             _forceDisplay = false;
         }
 
-        public static void StopPlayer2()
+        public static void StopAdditionalPlayers()
         {
-            Player2.Stop();
+            for (int i = 1; i < Players.Length; i++)
+            {
+                Players[i].Stop();
+            }
         }
 
         public static void ShowConfigurationError(string error)
@@ -1037,6 +1181,26 @@ namespace RadioControlMod
                 if (error == null)
                 {
                     error = player2Error;
+                }
+            }
+
+            if ((targets & PlayerTargets.Player3) != 0)
+            {
+                string player3Error;
+                accepted |= Player3.TryEnqueue(command, out player3Error);
+                if (error == null)
+                {
+                    error = player3Error;
+                }
+            }
+
+            if ((targets & PlayerTargets.Player4) != 0)
+            {
+                string player4Error;
+                accepted |= Player4.TryEnqueue(command, out player4Error);
+                if (error == null)
+                {
+                    error = player4Error;
                 }
             }
 
