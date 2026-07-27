@@ -550,7 +550,7 @@ namespace RadioControlMod
             }
 
             sprite = Sprite.CreateSpriteWithCenter(
-                GetTexture(source.texture),
+                source.texture == null ? null : GetTexture(source.texture),
                 source.source,
                 source.center
             );
