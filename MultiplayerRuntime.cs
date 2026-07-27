@@ -996,6 +996,9 @@ namespace RadioControlMod
         );
 
         private static readonly RenderTarget2D[] PlayerTargets = new RenderTarget2D[4];
+        private static readonly int[] ViewTargetIndexes = new int[4];
+        private static readonly int[] ViewScreens = new int[4];
+        private static readonly Vector2[] ViewOffsets = new Vector2[4];
         private static bool _drawingPass;
         private static readonly bool[] CameraInitialized = new bool[4];
         private static readonly int[] CameraScreens = new int[4];
@@ -1045,8 +1048,18 @@ namespace RadioControlMod
                         screen = GetPlayerScreen(player, playerNumber, out offset);
                     }
 
+                    int viewIndex = playerNumber - 1;
+                    ViewScreens[viewIndex] = screen;
+                    ViewOffsets[viewIndex] = offset;
+                    ViewTargetIndexes[viewIndex] = FindMatchingView(viewIndex);
+
+                    if (ViewTargetIndexes[viewIndex] != viewIndex)
+                    {
+                        continue;
+                    }
+
                     Camera.Offset = offset;
-                    DrawView(game, host, graphics, PlayerTargets[playerNumber - 1], screen);
+                    DrawView(game, host, graphics, PlayerTargets[viewIndex], screen);
                 }
             }
             finally
@@ -1075,6 +1088,9 @@ namespace RadioControlMod
             for (int i = 0; i < PlayerTargets.Length; i++)
             {
                 DisposeTarget(ref PlayerTargets[i]);
+                ViewTargetIndexes[i] = i;
+                ViewScreens[i] = 0;
+                ViewOffsets[i] = Vector2.Zero;
                 CameraInitialized[i] = false;
                 CameraScreens[i] = 0;
                 CameraOffsets[i] = Vector2.Zero;
@@ -1086,7 +1102,7 @@ namespace RadioControlMod
             for (int i = 0; i < 2; i++)
             {
                 Game1.spriteBatch.Draw(
-                    PlayerTargets[i],
+                    PlayerTargets[ViewTargetIndexes[i]],
                     new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
                     new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
                     Color.White
@@ -1102,7 +1118,7 @@ namespace RadioControlMod
                 int column = i % 2;
                 int row = i / 2;
                 Game1.spriteBatch.Draw(
-                    PlayerTargets[i],
+                    PlayerTargets[ViewTargetIndexes[i]],
                     new Rectangle(
                         column * HalfWidth,
                         row * HalfHeight,
@@ -1113,6 +1129,20 @@ namespace RadioControlMod
                     Color.White
                 );
             }
+        }
+
+        private static int FindMatchingView(int viewIndex)
+        {
+            for (int i = 0; i < viewIndex; i++)
+            {
+                if (ViewScreens[i] == ViewScreens[viewIndex] &&
+                    ViewOffsets[i] == ViewOffsets[viewIndex])
+                {
+                    return ViewTargetIndexes[i];
+                }
+            }
+
+            return viewIndex;
         }
 
         private static void DrawView(
