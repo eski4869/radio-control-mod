@@ -14,8 +14,10 @@ Single-button menu-style input uses a separate target:
 | --- | --- |
 | `up` | Up |
 | `down` | Down |
+| `space` | Jump and confirm |
 | `confirm` | Confirm |
 | `jump` | Jump |
+| `esc` | Pause and cancel |
 | `pause` | Pause |
 | `cancel` | Cancel |
 
@@ -86,8 +88,10 @@ Menu example:
 
 ```text
 http://127.0.0.1:8081/command?target=menu_control&command=down
+http://127.0.0.1:8081/command?target=menu_control&command=space
 http://127.0.0.1:8081/command?target=menu_control&command=confirm
 http://127.0.0.1:8081/command?target=menu_control&command=jump
+http://127.0.0.1:8081/command?target=menu_control&command=esc
 http://127.0.0.1:8081/command?target=menu_control&command=pause
 http://127.0.0.1:8081/command?target=menu_control&command=cancel
 ```

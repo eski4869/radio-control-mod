@@ -359,11 +359,19 @@ namespace RadioControlMod
                 case "down":
                     state.down = true;
                     break;
+                case "space":
+                    state.jump = true;
+                    state.confirm = true;
+                    break;
                 case "confirm":
                     state.confirm = true;
                     break;
                 case "jump":
                     state.jump = true;
+                    break;
+                case "esc":
+                    state.cancel = true;
+                    state.pause = true;
                     break;
                 case "pause":
                     state.pause = true;
