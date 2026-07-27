@@ -643,18 +643,15 @@ namespace RadioControlMod
             for (int i = 0; i < pixels.Length; i++)
             {
                 Color pixel = pixels[i];
-                if (pixel.A == 0)
+                if (!IsBodyBlue(pixel))
                 {
                     continue;
                 }
 
-                int luminance = (pixel.R * 54 + pixel.G * 183 + pixel.B * 19) >> 8;
-                pixels[i] = new Color(
-                    Math.Min(pixel.A, luminance * 9 / 10),
-                    Math.Min(pixel.A, luminance * 11 / 20),
-                    Math.Min(pixel.A, luminance * 6 / 5),
-                    pixel.A
-                );
+                int maximum = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+                int minimum = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+                int chroma = maximum - minimum;
+                pixels[i] = new Color(minimum + chroma * 3 / 4, minimum, maximum, pixel.A);
             }
 
             texture = new Texture2D(
@@ -665,6 +662,22 @@ namespace RadioControlMod
             texture.SetData(pixels);
             Textures.Add(source, texture);
             return texture;
+        }
+
+        private static bool IsBodyBlue(Color pixel)
+        {
+            if (pixel.A == 0)
+            {
+                return false;
+            }
+
+            int threshold = Math.Max(4, pixel.A / 16);
+            int maximum = Math.Max(pixel.R, Math.Max(pixel.G, pixel.B));
+            int minimum = Math.Min(pixel.R, Math.Min(pixel.G, pixel.B));
+            return maximum - minimum >= threshold &&
+                pixel.B >= pixel.G - threshold &&
+                pixel.G >= pixel.R + threshold / 2 &&
+                pixel.B >= pixel.R + threshold;
         }
 
         private sealed class LayeredSpriteCopy
