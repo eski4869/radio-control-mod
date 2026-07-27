@@ -95,16 +95,7 @@ namespace RadioControlMod
             get
             {
                 EnsurePreferencesLoaded();
-                return _preferences.MultiplayerEnabled;
-            }
-        }
-
-        internal static bool IsFourPlayerEnabled
-        {
-            get
-            {
-                EnsurePreferencesLoaded();
-                return _preferences.FourPlayerEnabled;
+                return _preferences.PlayerCount > 1;
             }
         }
 
@@ -113,12 +104,7 @@ namespace RadioControlMod
             get
             {
                 EnsurePreferencesLoaded();
-                if (!_preferences.MultiplayerEnabled)
-                {
-                    return 1;
-                }
-
-                return _preferences.FourPlayerEnabled ? 4 : 2;
+                return _preferences.PlayerCount;
             }
         }
 
@@ -160,57 +146,36 @@ namespace RadioControlMod
             SavePreferences();
         }
 
-        internal static bool SetMultiplayerEnabled(bool isEnabled)
+        internal static int SetPlayerCount(int playerCount)
         {
             EnsurePreferencesLoaded();
 
-            if (_preferences.MultiplayerEnabled == isEnabled)
+            if (playerCount != 1 && playerCount != 2 && playerCount != 4)
             {
-                return isEnabled;
+                return _preferences.PlayerCount;
             }
 
-            if (isEnabled)
+            if (_preferences.PlayerCount == playerCount)
+            {
+                return playerCount;
+            }
+
+            if (playerCount > 1)
             {
                 string error;
                 if (!TryReloadPreferences(out error))
                 {
                     RadioControlRuntime.ShowConfigurationError(error);
-                    return false;
+                    return _preferences.PlayerCount;
                 }
             }
 
-            _preferences.MultiplayerEnabled = isEnabled;
+            _preferences.PlayerCount = playerCount;
             SavePreferences();
 
             RadioControlRuntime.StopAdditionalPlayers();
             MultiplayerRuntime.SetPlayerCount(PlayerCount);
-            return isEnabled;
-        }
-
-        internal static bool SetFourPlayerEnabled(bool isEnabled)
-        {
-            EnsurePreferencesLoaded();
-
-            if (_preferences.FourPlayerEnabled == isEnabled)
-            {
-                return isEnabled;
-            }
-
-            if (isEnabled)
-            {
-                string error;
-                if (!TryReloadPreferences(out error))
-                {
-                    RadioControlRuntime.ShowConfigurationError(error);
-                    return false;
-                }
-            }
-
-            _preferences.FourPlayerEnabled = isEnabled;
-            SavePreferences();
-            RadioControlRuntime.StopAdditionalPlayers();
-            MultiplayerRuntime.SetPlayerCount(PlayerCount);
-            return isEnabled;
+            return playerCount;
         }
 
         [PauseMenuItemSetting]
@@ -229,22 +194,12 @@ namespace RadioControlMod
 
         [PauseMenuItemSetting]
         [MainMenuItemSetting]
-        public static RadioMultiplayerToggle RadioMultiplayerMenu(
+        public static RadioPlayerModeOption RadioMultiplayerMenu(
             object factory,
             JumpKing.PauseMenu.GuiFormat format
         )
         {
-            return new RadioMultiplayerToggle();
-        }
-
-        [PauseMenuItemSetting]
-        [MainMenuItemSetting]
-        public static RadioFourPlayerToggle RadioFourPlayerMenu(
-            object factory,
-            JumpKing.PauseMenu.GuiFormat format
-        )
-        {
-            return new RadioFourPlayerToggle();
+            return new RadioPlayerModeOption();
         }
 
         private static void EnsurePatched()
@@ -402,8 +357,7 @@ namespace RadioControlMod
                         !settingsText.Contains("JumpFrameLaplaceAlpha") ||
                         !settingsText.Contains("IsEnabled") ||
                         !settingsText.Contains("IsDebugEnabled") ||
-                        !settingsText.Contains("MultiplayerEnabled") ||
-                        !settingsText.Contains("FourPlayerEnabled") ||
+                        !settingsText.Contains("PlayerCount") ||
                         !settingsText.Contains("SingleMode") ||
                         !settingsText.Contains("MultiplayerMode") ||
                         !settingsText.Contains("FourPlayerMode");
@@ -437,7 +391,7 @@ namespace RadioControlMod
                 JumpKing.Program.crashLog.AddErrorMessage(
                     "RadioControl settings error: " + ex.Message
                 );
-                _preferences.MultiplayerEnabled = false;
+                _preferences.PlayerCount = 1;
                 _userRouter = CreateUserRouter(new RadioControlPreferences());
             }
 
@@ -528,8 +482,7 @@ namespace RadioControlMod
         public bool IsEnabled { get; set; } = true;
         public bool IsDebugEnabled { get; set; } = false;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
-        public bool MultiplayerEnabled { get; set; } = false;
-        public bool FourPlayerEnabled { get; set; } = false;
+        public int PlayerCount { get; set; } = 1;
         public SingleModePreferences SingleMode { get; set; } = new SingleModePreferences();
         public MultiplayerModePreferences MultiplayerMode { get; set; } =
             new MultiplayerModePreferences();
@@ -590,37 +543,48 @@ namespace RadioControlMod
         public string Player4Users { get; set; } = "[t-z]*";
     }
 
-    public class RadioMultiplayerToggle : ITextToggle
+    public class RadioPlayerModeOption : IOptions
     {
-        public RadioMultiplayerToggle() : base(ModEntry.IsMultiplayerEnabled)
+        public RadioPlayerModeOption() : base(
+            3,
+            PlayerCountToOption(ModEntry.PlayerCount),
+            IOptions.EdgeMode.Wrap
+        )
         {
         }
 
-        protected override string GetName()
+        protected override bool CanChange()
         {
-            return "Multiplayer Mode";
+            return true;
         }
 
-        protected override void OnToggle()
+        protected override string CurrentOptionName()
         {
-            OverrideToggle(ModEntry.SetMultiplayerEnabled(toggle));
-        }
-    }
-
-    public class RadioFourPlayerToggle : ITextToggle
-    {
-        public RadioFourPlayerToggle() : base(ModEntry.IsFourPlayerEnabled)
-        {
-        }
-
-        protected override string GetName()
-        {
-            return "  ┗ 4 Player Mode";
+            switch (CurrentOption)
+            {
+                case 1:
+                    return "Mode: 2 Players";
+                case 2:
+                    return "Mode: 4 Players";
+                default:
+                    return "Mode: Single Player";
+            }
         }
 
-        protected override void OnToggle()
+        protected override void OnOptionChange(int option)
         {
-            OverrideToggle(ModEntry.SetFourPlayerEnabled(toggle));
+            int playerCount = OptionToPlayerCount(option);
+            CurrentOption = PlayerCountToOption(ModEntry.SetPlayerCount(playerCount));
+        }
+
+        private static int PlayerCountToOption(int playerCount)
+        {
+            return playerCount == 4 ? 2 : playerCount == 2 ? 1 : 0;
+        }
+
+        private static int OptionToPlayerCount(int option)
+        {
+            return option == 2 ? 4 : option == 1 ? 2 : 1;
         }
     }
 

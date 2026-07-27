@@ -114,8 +114,7 @@ http://127.0.0.1:8081/command?target=menu_control&command=cancel
   <IsEnabled>true</IsEnabled>
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
-  <MultiplayerEnabled>false</MultiplayerEnabled>
-  <FourPlayerEnabled>false</FourPlayerEnabled>
+  <PlayerCount>1</PlayerCount>
   <SingleMode>
     <Player1Users>*</Player1Users>
   </SingleMode>
@@ -140,16 +139,15 @@ In single-player mode, a request without `user` controls Player 1. In multiplaye
 mode, `user` is required. If a name matches both multiplayer lists, the same command
 is queued for both players. A name that matches neither list is ignored.
 
-Turning `Multiplayer Mode` or `4 Player Mode` on reloads this settings file, so the
-allow lists can be changed without restarting the game. Invalid settings keep the
-current mode disabled and show an error in the Radio Control overlay.
+Selecting a multiplayer player count reloads this settings file, so the allow lists
+can be changed without restarting the game. Invalid settings keep the current mode
+and show an error in the Radio Control overlay.
 
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
 
-`Radio Control`, `Radio Debug`, `Multiplayer Mode`, and its `4 Player Mode` child
-setting can be toggled from the main menu or pause menu. With Multiplayer enabled,
-Four Player off selects two players and Four Player on selects four players.
+`Radio Control` and `Radio Debug` can be toggled from the main menu or pause menu.
+The mode selector provides `Single Player`, `2 Players`, and `4 Players`.
 
 ## Multiplayer Mode
 

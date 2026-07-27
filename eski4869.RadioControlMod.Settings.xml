@@ -3,8 +3,7 @@
   <IsEnabled>true</IsEnabled>
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
-  <MultiplayerEnabled>false</MultiplayerEnabled>
-  <FourPlayerEnabled>false</FourPlayerEnabled>
+  <PlayerCount>1</PlayerCount>
   <SingleMode>
     <Player1Users>*</Player1Users>
   </SingleMode>
