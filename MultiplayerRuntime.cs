@@ -257,6 +257,7 @@ namespace RadioControlMod
                     _creatingPlayerNumber = playerNumber;
                     PlayerEntity player = new PlayerEntity();
                     AdditionalPlayers[index] = player;
+                    PlayerSpriteFactory.Prepare(playerNumber);
                     _blockBehavioursSynchronized = false;
 
                     BodyComp body = player.GetComponent<BodyComp>();
@@ -695,6 +696,30 @@ namespace RadioControlMod
             return sprite;
         }
 
+        public static void Prepare(int playerNumber)
+        {
+            if (Game1.instance == null || Game1.instance.contentManager == null)
+            {
+                return;
+            }
+
+            JKContentManager.PlayerSprites sprites =
+                Game1.instance.contentManager.playerSprites;
+            Get(sprites.idle, playerNumber);
+            Get(sprites.walk_one, playerNumber);
+            Get(sprites.walk_smear, playerNumber);
+            Get(sprites.walk_two, playerNumber);
+            Get(sprites.jump_charge, playerNumber);
+            Get(sprites.jump_up, playerNumber);
+            Get(sprites.jump_fall, playerNumber);
+            Get(sprites.jump_bounce, playerNumber);
+            Get(sprites.splat, playerNumber);
+            Get(sprites.look_up, playerNumber);
+            Get(sprites.stretch_one, playerNumber);
+            Get(sprites.stretch_smear, playerNumber);
+            Get(sprites.stretch_two, playerNumber);
+        }
+
         public static void Release()
         {
             for (int i = 0; i < ColoredPlayerCount; i++)
@@ -1101,13 +1126,22 @@ namespace RadioControlMod
         {
             for (int i = 0; i < 2; i++)
             {
+                PlayerEntity player = MultiplayerRuntime.GetPlayer(i + 1);
                 Game1.spriteBatch.Draw(
                     PlayerTargets[ViewTargetIndexes[i]],
                     new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
-                    new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
+                    GetPlayerViewport(player),
                     Color.White
                 );
             }
+        }
+
+        private static Rectangle GetPlayerViewport(PlayerEntity player)
+        {
+            BodyComp body = player == null ? null : player.GetComponent<BodyComp>();
+            int centerX = body == null ? Width / 2 : body.GetHitbox().Center.X;
+            int sourceX = centerX < HalfWidth ? 0 : HalfWidth;
+            return new Rectangle(sourceX, 0, HalfWidth, Height);
         }
 
         private static void DrawFourPlayerViews()
