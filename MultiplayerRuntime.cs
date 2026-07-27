@@ -540,10 +540,17 @@ namespace RadioControlMod
             typeof(Camera),
             "_current_screen"
         );
+        private static readonly MethodInfo BodyIsOnBlockMethod = AccessTools.Method(
+            typeof(BodyComp),
+            "IsOnBlock",
+            new Type[] { typeof(Type) }
+        );
 
         private static RenderTarget2D _player1Target;
         private static RenderTarget2D _player2Target;
         private static bool _drawingPass;
+        private static bool _player2CameraInitialized;
+        private static int _player2CameraScreen;
 
         public static bool PrefixDraw(JumpGame game)
         {
@@ -603,6 +610,8 @@ namespace RadioControlMod
         {
             DisposeTarget(ref _player1Target);
             DisposeTarget(ref _player2Target);
+            _player2CameraInitialized = false;
+            _player2CameraScreen = 0;
         }
 
         private static void DrawView(
@@ -638,10 +647,38 @@ namespace RadioControlMod
                 return Camera.CurrentScreen;
             }
 
-            int screen = body.LastScreen;
-            int maxScreen = LevelManager.Instance == null ? screen :
-                Math.Max(0, LevelManager.TotalScreens - 1);
-            return Math.Max(0, Math.Min(screen, maxScreen));
+            int player1Screen = Camera.CurrentScreen;
+            if (!_player2CameraInitialized)
+            {
+                _player2CameraScreen = player1Screen;
+                _player2CameraInitialized = true;
+            }
+
+            CameraScreenField.SetValue(null, _player2CameraScreen);
+
+            try
+            {
+                bool isOnSand = BodyIsOnBlockMethod != null &&
+                    (bool)BodyIsOnBlockMethod.Invoke(
+                        body,
+                        new object[] { typeof(SandBlock) }
+                    );
+
+                if (!isOnSand)
+                {
+                    Camera.UpdateCameraWithVelocity(
+                        body.GetHitbox().Center,
+                        body.Velocity
+                    );
+                }
+
+                _player2CameraScreen = Camera.CurrentScreen;
+                return _player2CameraScreen;
+            }
+            finally
+            {
+                CameraScreenField.SetValue(null, player1Screen);
+            }
         }
 
         private static void EnsureTargets(GraphicsDevice graphics)
