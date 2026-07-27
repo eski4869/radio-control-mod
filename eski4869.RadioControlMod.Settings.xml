@@ -3,4 +3,12 @@
   <IsEnabled>true</IsEnabled>
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
+  <MultiplayerEnabled>false</MultiplayerEnabled>
+  <SingleMode>
+    <Player1Users>*</Player1Users>
+  </SingleMode>
+  <MultiplayerMode>
+    <Player1Users>[a-m]*</Player1Users>
+    <Player2Users>[n-z]*</Player2Users>
+  </MultiplayerMode>
 </RadioControlPreferences>
