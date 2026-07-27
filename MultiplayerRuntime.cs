@@ -675,17 +675,25 @@ namespace RadioControlMod
             Game1.spriteBatch.Draw(
                 _player1Target,
                 new Rectangle(0, 0, HalfWidth, Height),
-                new Rectangle(0, 0, HalfWidth, Height),
+                GetPlayerViewport(player1),
                 Color.White
             );
             Game1.spriteBatch.Draw(
                 _player2Target,
                 new Rectangle(HalfWidth, 0, HalfWidth, Height),
-                new Rectangle(HalfWidth, 0, HalfWidth, Height),
+                GetPlayerViewport(player2),
                 Color.White
             );
 
             return false;
+        }
+
+        private static Rectangle GetPlayerViewport(PlayerEntity player)
+        {
+            BodyComp body = player.GetComponent<BodyComp>();
+            int centerX = body == null ? Width / 2 : body.GetHitbox().Center.X;
+            int sourceX = Math.Max(0, Math.Min(Width - HalfWidth, centerX - HalfWidth / 2));
+            return new Rectangle(sourceX, 0, HalfWidth, Height);
         }
 
         public static void Release()
