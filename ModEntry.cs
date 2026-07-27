@@ -239,6 +239,18 @@ namespace RadioControlMod
                     typeof(Player2SaveUpdatePatch),
                     "Prefix"
                 );
+                MethodInfo entityUpdateComponents = AccessTools.Method(
+                    typeof(Entity),
+                    "UpdateComponents"
+                );
+                MethodInfo player2ScreenPrefix = AccessTools.Method(
+                    typeof(Player2ScreenUpdatePatch),
+                    "Prefix"
+                );
+                MethodInfo player2ScreenPostfix = AccessTools.Method(
+                    typeof(Player2ScreenUpdatePatch),
+                    "Postfix"
+                );
                 MethodInfo jumpGameDraw = AccessTools.Method(typeof(JumpGame), "Draw");
                 MethodInfo jumpGameDrawPrefix = AccessTools.Method(
                     typeof(MultiplayerDrawPatch),
@@ -264,6 +276,9 @@ namespace RadioControlMod
                     inputStatePrefix == null ||
                     playerUpdate == null ||
                     playerUpdatePrefix == null ||
+                    entityUpdateComponents == null ||
+                    player2ScreenPrefix == null ||
+                    player2ScreenPostfix == null ||
                     jumpGameDraw == null ||
                     jumpGameDrawPrefix == null ||
                     checkWin == null ||
@@ -282,6 +297,11 @@ namespace RadioControlMod
                 _harmony.Patch(inputGetState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(inputGetPressedState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(playerUpdate, prefix: new HarmonyMethod(playerUpdatePrefix));
+                _harmony.Patch(
+                    entityUpdateComponents,
+                    prefix: new HarmonyMethod(player2ScreenPrefix),
+                    postfix: new HarmonyMethod(player2ScreenPostfix)
+                );
                 _harmony.Patch(jumpGameDraw, prefix: new HarmonyMethod(jumpGameDrawPrefix));
                 _harmony.Patch(checkWin, postfix: new HarmonyMethod(checkWinPostfix));
             }

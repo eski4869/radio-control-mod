@@ -466,6 +466,45 @@ namespace RadioControlMod
         }
     }
 
+    internal static class Player2ScreenUpdatePatch
+    {
+        private const int NotPlayer2 = -1;
+        private static readonly FieldInfo CameraScreenField = AccessTools.Field(
+            typeof(Camera),
+            "_current_screen"
+        );
+
+        public static void Prefix(Entity __instance, out int __state)
+        {
+            PlayerEntity player = __instance as PlayerEntity;
+            if (!MultiplayerRuntime.IsPlayer2(player) || CameraScreenField == null)
+            {
+                __state = NotPlayer2;
+                return;
+            }
+
+            BodyComp body = player.GetComponent<BodyComp>();
+            if (body == null)
+            {
+                __state = NotPlayer2;
+                return;
+            }
+
+            __state = Camera.CurrentScreen;
+            int screen = -(int)Math.Floor(body.GetHitbox().Center.Y / 360f);
+            screen = Math.Max(0, Math.Min(LevelManager.TotalScreens - 1, screen));
+            CameraScreenField.SetValue(null, screen);
+        }
+
+        public static void Postfix(int __state)
+        {
+            if (__state != NotPlayer2)
+            {
+                CameraScreenField.SetValue(null, __state);
+            }
+        }
+    }
+
     internal static class MultiplayerEndingPatch
     {
         public static void Postfix(
