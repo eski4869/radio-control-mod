@@ -1070,14 +1070,6 @@ namespace RadioControlMod
             return false;
         }
 
-        private static Rectangle GetPlayerViewport(PlayerEntity player)
-        {
-            BodyComp body = player.GetComponent<BodyComp>();
-            int centerX = body == null ? Width / 2 : body.GetHitbox().Center.X;
-            int sourceX = centerX < HalfWidth ? 0 : HalfWidth;
-            return new Rectangle(sourceX, 0, HalfWidth, Height);
-        }
-
         public static void Release()
         {
             for (int i = 0; i < PlayerTargets.Length; i++)
@@ -1093,11 +1085,10 @@ namespace RadioControlMod
         {
             for (int i = 0; i < 2; i++)
             {
-                PlayerEntity player = MultiplayerRuntime.GetPlayer(i + 1);
                 Game1.spriteBatch.Draw(
                     PlayerTargets[i],
                     new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
-                    GetPlayerViewport(player),
+                    new Rectangle(i * HalfWidth, 0, HalfWidth, Height),
                     Color.White
                 );
             }
