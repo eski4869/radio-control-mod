@@ -1,9 +1,11 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Reflection;
 using EntityComponent;
 using HarmonyLib;
 using JumpKing;
+using JumpKing.API;
 using JumpKing.GameManager.MultiEnding;
 using JumpKing.Level;
 using JumpKing.Player;
@@ -18,6 +20,11 @@ namespace RadioControlMod
         private static PlayerEntity _player2;
         private static bool _levelStarted;
         private static bool _raceComplete;
+        private static bool _blockBehavioursSynchronized;
+        private static readonly FieldInfo BlockBehaviourLookupField = AccessTools.Field(
+            typeof(BodyComp),
+            "m_blockBehaviourLookup"
+        );
 
         public static bool IsActive
         {
@@ -82,6 +89,60 @@ namespace RadioControlMod
             StopPlayer2();
         }
 
+        public static void SynchronizeBlockBehaviours()
+        {
+            if (_blockBehavioursSynchronized || !IsActive ||
+                BlockBehaviourLookupField == null || EntityManager.instance == null)
+            {
+                return;
+            }
+
+            PlayerEntity player1 = EntityManager.instance.Find<PlayerEntity>();
+            PlayerEntity player2 = Player2;
+            BodyComp player1Body = player1 == null ? null : player1.GetComponent<BodyComp>();
+            BodyComp player2Body = player2 == null ? null : player2.GetComponent<BodyComp>();
+            if (player1Body == null || player2Body == null)
+            {
+                return;
+            }
+
+            IDictionary sourceLookup = BlockBehaviourLookupField.GetValue(player1Body) as IDictionary;
+            IDictionary targetLookup = BlockBehaviourLookupField.GetValue(player2Body) as IDictionary;
+            if (sourceLookup == null || targetLookup == null)
+            {
+                return;
+            }
+
+            foreach (DictionaryEntry entry in sourceLookup)
+            {
+                Type blockType = entry.Key as Type;
+                IBlockBehaviour sourceBehaviour = entry.Value as IBlockBehaviour;
+                if (blockType == null || sourceBehaviour == null ||
+                    targetLookup.Contains(blockType))
+                {
+                    continue;
+                }
+
+                IBlockBehaviour player2Behaviour = CreateBlockBehaviour(
+                    sourceBehaviour,
+                    player2,
+                    player2Body
+                );
+                if (player2Behaviour == null)
+                {
+                    JumpKing.Program.crashLog.AddErrorMessage(
+                        "RadioControl multiplayer cannot construct block behaviour: " +
+                        sourceBehaviour.GetType().FullName
+                    );
+                    continue;
+                }
+
+                player2Body.RegisterBlockBehaviour(blockType, player2Behaviour);
+            }
+
+            _blockBehavioursSynchronized = true;
+        }
+
         private static void StartPlayer2()
         {
             if (_player2 != null && _player2.IsAlive)
@@ -110,6 +171,7 @@ namespace RadioControlMod
             {
                 PlayerEntity player2 = new PlayerEntity();
                 _player2 = player2;
+                _blockBehavioursSynchronized = false;
 
                 BodyComp player2Body = player2.GetComponent<BodyComp>();
                 if (player2Body != null)
@@ -151,6 +213,229 @@ namespace RadioControlMod
             }
 
             _player2 = null;
+            _blockBehavioursSynchronized = false;
+        }
+
+        private static IBlockBehaviour CreateBlockBehaviour(
+            IBlockBehaviour sourceBehaviour,
+            PlayerEntity player,
+            BodyComp body
+        )
+        {
+            Type behaviourType = sourceBehaviour.GetType();
+            ConstructorInfo[] constructors = behaviourType.GetConstructors(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+
+            for (int i = 0; i < constructors.Length; i++)
+            {
+                ParameterInfo[] parameters = constructors[i].GetParameters();
+                object[] arguments = new object[parameters.Length];
+                bool supported = true;
+
+                for (int j = 0; j < parameters.Length; j++)
+                {
+                    object argument = ResolveBehaviourArgument(
+                        parameters[j],
+                        sourceBehaviour,
+                        player,
+                        body
+                    );
+                    if (argument == UnsupportedArgument.Value)
+                    {
+                        supported = false;
+                        break;
+                    }
+
+                    arguments[j] = argument;
+                }
+
+                if (!supported)
+                {
+                    continue;
+                }
+
+                try
+                {
+                    return constructors[i].Invoke(arguments) as IBlockBehaviour;
+                }
+                catch
+                {
+                }
+            }
+
+            return null;
+        }
+
+        private static object ResolveBehaviourArgument(
+            ParameterInfo parameter,
+            IBlockBehaviour sourceBehaviour,
+            PlayerEntity player,
+            BodyComp body
+        )
+        {
+            Type parameterType = parameter.ParameterType;
+
+            if (parameterType.IsInstanceOfType(player))
+            {
+                return player;
+            }
+
+            if (parameterType.IsInstanceOfType(body))
+            {
+                return body;
+            }
+
+            InputComponent input = player.GetComponent<InputComponent>();
+            if (input != null && parameterType.IsInstanceOfType(input))
+            {
+                return input;
+            }
+
+            if (LevelManager.Instance != null &&
+                parameterType.IsInstanceOfType(LevelManager.Instance))
+            {
+                return LevelManager.Instance;
+            }
+
+            object configuredValue;
+            if (TryReadConfiguredValue(sourceBehaviour, parameter, out configuredValue))
+            {
+                return configuredValue;
+            }
+
+            return UnsupportedArgument.Value;
+        }
+
+        private static bool TryReadConfiguredValue(
+            object source,
+            ParameterInfo parameter,
+            out object value
+        )
+        {
+            value = null;
+            Type sourceType = source.GetType();
+            Type parameterType = parameter.ParameterType;
+            string parameterName = NormalizeMemberName(parameter.Name);
+            PropertyInfo[] properties = sourceType.GetProperties(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+
+            for (int i = 0; i < properties.Length; i++)
+            {
+                PropertyInfo property = properties[i];
+                if (!property.CanRead || property.GetIndexParameters().Length != 0 ||
+                    !parameterType.IsAssignableFrom(property.PropertyType))
+                {
+                    continue;
+                }
+
+                if (NormalizeMemberName(property.Name) == parameterName)
+                {
+                    value = property.GetValue(source, null);
+                    return true;
+                }
+            }
+
+            PropertyInfo singleProperty = null;
+            for (int i = 0; i < properties.Length; i++)
+            {
+                PropertyInfo property = properties[i];
+                if (property.CanRead && property.GetIndexParameters().Length == 0 &&
+                    parameterType.IsAssignableFrom(property.PropertyType))
+                {
+                    if (singleProperty != null)
+                    {
+                        singleProperty = null;
+                        break;
+                    }
+
+                    singleProperty = property;
+                }
+            }
+
+            if (singleProperty != null)
+            {
+                value = singleProperty.GetValue(source, null);
+                return true;
+            }
+
+            FieldInfo[] fields = sourceType.GetFields(
+                BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance
+            );
+            for (int i = 0; i < fields.Length; i++)
+            {
+                FieldInfo field = fields[i];
+                if (parameterType.IsAssignableFrom(field.FieldType) &&
+                    NormalizeMemberName(field.Name) == parameterName)
+                {
+                    value = field.GetValue(source);
+                    return true;
+                }
+            }
+
+            FieldInfo singleField = null;
+            for (int i = 0; i < fields.Length; i++)
+            {
+                FieldInfo field = fields[i];
+                if (!parameterType.IsAssignableFrom(field.FieldType))
+                {
+                    continue;
+                }
+
+                if (singleField != null)
+                {
+                    return false;
+                }
+
+                singleField = field;
+            }
+
+            if (singleField == null)
+            {
+                return false;
+            }
+
+            value = singleField.GetValue(source);
+            return true;
+        }
+
+        private static string NormalizeMemberName(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+            {
+                return string.Empty;
+            }
+
+            var characters = new List<char>(name.Length);
+            for (int i = 0; i < name.Length; i++)
+            {
+                if (char.IsLetterOrDigit(name[i]))
+                {
+                    characters.Add(char.ToLowerInvariant(name[i]));
+                }
+            }
+
+            const string backingFieldSuffix = "kbackingfield";
+            string normalized = new string(characters.ToArray());
+            if (normalized.EndsWith(backingFieldSuffix, StringComparison.Ordinal))
+            {
+                normalized = normalized.Substring(
+                    0,
+                    normalized.Length - backingFieldSuffix.Length
+                );
+            }
+
+            return normalized;
+        }
+
+        private sealed class UnsupportedArgument
+        {
+            public static readonly UnsupportedArgument Value = new UnsupportedArgument();
+
+            private UnsupportedArgument()
+            {
+            }
         }
     }
 
@@ -286,8 +571,8 @@ namespace RadioControlMod
 
             try
             {
-                DrawView(game, host, graphics, _player1Target, GetScreen(player1));
-                DrawView(game, host, graphics, _player2Target, GetScreen(player2));
+                DrawView(game, host, graphics, _player1Target, previousScreen);
+                DrawView(game, host, graphics, _player2Target, GetPlayerScreen(player2));
             }
             finally
             {
@@ -345,7 +630,7 @@ namespace RadioControlMod
             }
         }
 
-        private static int GetScreen(PlayerEntity player)
+        private static int GetPlayerScreen(PlayerEntity player)
         {
             BodyComp body = player.GetComponent<BodyComp>();
             if (body == null)
@@ -353,7 +638,7 @@ namespace RadioControlMod
                 return Camera.CurrentScreen;
             }
 
-            int screen = (int)Math.Floor(body.GetHitbox().Center.Y / (double)Height);
+            int screen = body.LastScreen;
             int maxScreen = LevelManager.Instance == null ? screen :
                 Math.Max(0, LevelManager.TotalScreens - 1);
             return Math.Max(0, Math.Min(screen, maxScreen));

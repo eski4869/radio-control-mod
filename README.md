@@ -149,6 +149,8 @@ Multiplayer mode creates a second player in the right half of a map designed as 
 parallel 240-pixel lanes. Player 1 is drawn in the left half and Player 2 in the
 right half; each half follows its own vertical screen. The first player to satisfy a
 native ending condition wins, and the normal Jump King ending flow is then used.
+Block behaviours registered on Player 1 by custom block mods are recreated for
+Player 2 when the level begins, so both players use the same loaded block rules.
 
 Player 2 currently receives movement and jump commands (`j`, `jl`, `jr`, `l`, `r`,
 and `w`). Player-specific Snake and Boots activation is not provided because those

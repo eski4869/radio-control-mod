@@ -509,6 +509,7 @@ namespace RadioControlMod
         public static void Prefix()
         {
             MenuControlRuntime.BeginFrame();
+            MultiplayerRuntime.SynchronizeBlockBehaviours();
             RadioControlRuntime.UpdateInputFrame();
         }
     }
