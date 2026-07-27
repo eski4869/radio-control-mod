@@ -531,8 +531,23 @@ namespace RadioControlMod
 
     internal static class Player2SpriteFactory
     {
+        private static readonly Type LayeredSpriteType = AccessTools.TypeByName(
+            "JumpKing.XnaWrappers.LayeredSprite"
+        );
+        private static readonly PropertyInfo LayeredSpritesProperty =
+            LayeredSpriteType == null ? null : AccessTools.Property(
+                LayeredSpriteType,
+                "Sprites"
+            );
+        private static readonly ConstructorInfo LayeredSpriteConstructor =
+            LayeredSpriteType == null ? null : AccessTools.Constructor(
+                LayeredSpriteType,
+                new Type[] { typeof(Sprite), typeof(Sprite[]) }
+            );
         private static readonly Dictionary<Sprite, Sprite> Sprites =
             new Dictionary<Sprite, Sprite>();
+        private static readonly Dictionary<Sprite, LayeredSpriteCopy> LayeredSprites =
+            new Dictionary<Sprite, LayeredSpriteCopy>();
         private static readonly Dictionary<Texture2D, Texture2D> Textures =
             new Dictionary<Texture2D, Texture2D>();
 
@@ -541,6 +556,11 @@ namespace RadioControlMod
             if (source == null)
             {
                 return null;
+            }
+
+            if (LayeredSpriteType != null && LayeredSpriteType.IsInstanceOfType(source))
+            {
+                return GetLayeredSprite(source);
             }
 
             Sprite sprite;
@@ -567,7 +587,46 @@ namespace RadioControlMod
             }
 
             Sprites.Clear();
+            LayeredSprites.Clear();
             Textures.Clear();
+        }
+
+        private static Sprite GetLayeredSprite(Sprite source)
+        {
+            if (LayeredSpritesProperty == null || LayeredSpriteConstructor == null)
+            {
+                throw new InvalidOperationException("LayeredSprite metadata is unavailable.");
+            }
+
+            IList sourceLayers = LayeredSpritesProperty.GetValue(source, null) as IList;
+            if (sourceLayers == null || sourceLayers.Count == 0)
+            {
+                throw new InvalidOperationException("LayeredSprite has no layers.");
+            }
+
+            LayeredSpriteCopy cached;
+            if (LayeredSprites.TryGetValue(source, out cached) && cached.Matches(sourceLayers))
+            {
+                return cached.Sprite;
+            }
+
+            Sprite[] sourceSprites = new Sprite[sourceLayers.Count];
+            Sprite[] extraLayers = new Sprite[sourceLayers.Count - 1];
+            for (int i = 0; i < sourceLayers.Count; i++)
+            {
+                Sprite sourceSprite = (Sprite)sourceLayers[i];
+                sourceSprites[i] = sourceSprite;
+                if (i > 0)
+                {
+                    extraLayers[i - 1] = Get(sourceSprite);
+                }
+            }
+
+            Sprite sprite = (Sprite)LayeredSpriteConstructor.Invoke(
+                new object[] { Get(sourceSprites[0]), extraLayers }
+            );
+            LayeredSprites[source] = new LayeredSpriteCopy(sprite, sourceSprites);
+            return sprite;
         }
 
         private static Texture2D GetTexture(Texture2D source)
@@ -606,6 +665,36 @@ namespace RadioControlMod
             texture.SetData(pixels);
             Textures.Add(source, texture);
             return texture;
+        }
+
+        private sealed class LayeredSpriteCopy
+        {
+            public readonly Sprite Sprite;
+            private readonly Sprite[] _sourceLayers;
+
+            public LayeredSpriteCopy(Sprite sprite, Sprite[] sourceLayers)
+            {
+                Sprite = sprite;
+                _sourceLayers = sourceLayers;
+            }
+
+            public bool Matches(IList sourceLayers)
+            {
+                if (sourceLayers.Count != _sourceLayers.Length)
+                {
+                    return false;
+                }
+
+                for (int i = 0; i < _sourceLayers.Length; i++)
+                {
+                    if (!ReferenceEquals(sourceLayers[i], _sourceLayers[i]))
+                    {
+                        return false;
+                    }
+                }
+
+                return true;
+            }
         }
     }
 
