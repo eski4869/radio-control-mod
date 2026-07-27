@@ -239,14 +239,13 @@ namespace RadioControlMod
                     typeof(Player2SaveUpdatePatch),
                     "Prefix"
                 );
-                MethodInfo playerDraw = AccessTools.Method(typeof(PlayerEntity), "Draw");
-                MethodInfo player2TintPrefix = AccessTools.Method(
-                    typeof(Player2TintPatch),
-                    "Prefix"
+                MethodInfo playerSetSprite = AccessTools.Method(
+                    typeof(PlayerEntity),
+                    "SetSprite"
                 );
-                MethodInfo player2TintPostfix = AccessTools.Method(
-                    typeof(Player2TintPatch),
-                    "Postfix"
+                MethodInfo player2SpritePrefix = AccessTools.Method(
+                    typeof(Player2SpritePatch),
+                    "Prefix"
                 );
                 MethodInfo entityUpdateComponents = AccessTools.Method(
                     typeof(Entity),
@@ -285,9 +284,8 @@ namespace RadioControlMod
                     inputStatePrefix == null ||
                     playerUpdate == null ||
                     playerUpdatePrefix == null ||
-                    playerDraw == null ||
-                    player2TintPrefix == null ||
-                    player2TintPostfix == null ||
+                    playerSetSprite == null ||
+                    player2SpritePrefix == null ||
                     entityUpdateComponents == null ||
                     player2ScreenPrefix == null ||
                     player2ScreenPostfix == null ||
@@ -309,11 +307,7 @@ namespace RadioControlMod
                 _harmony.Patch(inputGetState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(inputGetPressedState, prefix: new HarmonyMethod(inputStatePrefix));
                 _harmony.Patch(playerUpdate, prefix: new HarmonyMethod(playerUpdatePrefix));
-                _harmony.Patch(
-                    playerDraw,
-                    prefix: new HarmonyMethod(player2TintPrefix),
-                    postfix: new HarmonyMethod(player2TintPostfix)
-                );
+                _harmony.Patch(playerSetSprite, prefix: new HarmonyMethod(player2SpritePrefix));
                 _harmony.Patch(
                     entityUpdateComponents,
                     prefix: new HarmonyMethod(player2ScreenPrefix),

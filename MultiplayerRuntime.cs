@@ -20,6 +20,7 @@ namespace RadioControlMod
         private static bool _levelStarted;
         private static bool _raceComplete;
         private static bool _blockBehavioursSynchronized;
+        private static bool _creatingPlayer2;
         private static readonly FieldInfo BlockBehaviourLookupField = AccessTools.Field(
             typeof(BodyComp),
             "m_blockBehaviourLookup"
@@ -80,6 +81,11 @@ namespace RadioControlMod
         {
             return input != null && input.gameObject != null &&
                 ReferenceEquals(input.gameObject, _player2);
+        }
+
+        public static bool UsesPlayer2Sprites(PlayerEntity player)
+        {
+            return _creatingPlayer2 || IsPlayer2(player);
         }
 
         public static void FinishRace()
@@ -168,7 +174,17 @@ namespace RadioControlMod
 
             try
             {
-                PlayerEntity player2 = new PlayerEntity();
+                PlayerEntity player2;
+                _creatingPlayer2 = true;
+                try
+                {
+                    player2 = new PlayerEntity();
+                }
+                finally
+                {
+                    _creatingPlayer2 = false;
+                }
+
                 _player2 = player2;
                 _blockBehavioursSynchronized = false;
 
@@ -210,6 +226,7 @@ namespace RadioControlMod
 
             _player2 = null;
             _blockBehavioursSynchronized = false;
+            Player2SpriteFactory.Release();
         }
 
         private static IBlockBehaviour CreateBlockBehaviour(
@@ -501,50 +518,94 @@ namespace RadioControlMod
         }
     }
 
-    internal static class Player2TintPatch
+    internal static class Player2SpritePatch
     {
-        private static readonly FieldInfo PlayerSpriteField = AccessTools.Field(
-            typeof(PlayerEntity),
-            "m_sprite"
-        );
-        private static readonly Color Player2Color = new Color(190, 120, 255);
-
-        public static void Prefix(PlayerEntity __instance, out Player2TintState __state)
+        public static void Prefix(PlayerEntity __instance, ref Sprite p_sprite)
         {
-            __state = null;
-            if (!MultiplayerRuntime.IsPlayer2(__instance) || PlayerSpriteField == null)
+            if (MultiplayerRuntime.UsesPlayer2Sprites(__instance))
             {
-                return;
-            }
-
-            Sprite sprite = PlayerSpriteField.GetValue(__instance) as Sprite;
-            if (sprite == null)
-            {
-                return;
-            }
-
-            __state = new Player2TintState(sprite, sprite.GetColor());
-            sprite.SetColor(Player2Color);
-        }
-
-        public static void Postfix(Player2TintState __state)
-        {
-            if (__state != null)
-            {
-                __state.Sprite.SetColor(__state.OriginalColor);
+                p_sprite = Player2SpriteFactory.Get(p_sprite);
             }
         }
+    }
 
-        internal sealed class Player2TintState
+    internal static class Player2SpriteFactory
+    {
+        private static readonly Dictionary<Sprite, Sprite> Sprites =
+            new Dictionary<Sprite, Sprite>();
+        private static readonly Dictionary<Texture2D, Texture2D> Textures =
+            new Dictionary<Texture2D, Texture2D>();
+
+        public static Sprite Get(Sprite source)
         {
-            public readonly Sprite Sprite;
-            public readonly Color OriginalColor;
-
-            public Player2TintState(Sprite sprite, Color originalColor)
+            if (source == null)
             {
-                Sprite = sprite;
-                OriginalColor = originalColor;
+                return null;
             }
+
+            Sprite sprite;
+            if (Sprites.TryGetValue(source, out sprite))
+            {
+                return sprite;
+            }
+
+            sprite = Sprite.CreateSpriteWithCenter(
+                GetTexture(source.texture),
+                source.source,
+                source.center
+            );
+            sprite.SetColor(source.GetColor());
+            Sprites.Add(source, sprite);
+            return sprite;
+        }
+
+        public static void Release()
+        {
+            foreach (Texture2D texture in Textures.Values)
+            {
+                texture.Dispose();
+            }
+
+            Sprites.Clear();
+            Textures.Clear();
+        }
+
+        private static Texture2D GetTexture(Texture2D source)
+        {
+            Texture2D texture;
+            if (Textures.TryGetValue(source, out texture))
+            {
+                return texture;
+            }
+
+            Color[] pixels = new Color[source.Width * source.Height];
+            source.GetData(pixels);
+
+            for (int i = 0; i < pixels.Length; i++)
+            {
+                Color pixel = pixels[i];
+                if (pixel.A == 0)
+                {
+                    continue;
+                }
+
+                int luminance = (pixel.R * 54 + pixel.G * 183 + pixel.B * 19) >> 8;
+                pixels[i] = new Color(
+                    Math.Min(pixel.A, luminance * 9 / 10),
+                    Math.Min(pixel.A, luminance * 11 / 20),
+                    Math.Min(pixel.A, luminance * 6 / 5),
+                    pixel.A
+                );
+            }
+
+            texture = new Texture2D(
+                Game1.instance.GraphicsDevice,
+                source.Width,
+                source.Height
+            );
+            texture.SetData(pixels);
+            Textures.Add(source, texture);
+            return texture;
         }
     }
 
