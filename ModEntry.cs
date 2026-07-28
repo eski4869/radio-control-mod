@@ -28,7 +28,6 @@ namespace RadioControlMod
 
         private static Harmony _harmony;
         private static RadioControlPreferences _preferences;
-        private static UserCommandRouter _userRouter;
         private static string _settingsPath;
 
         [BeforeLevelLoad]
@@ -39,6 +38,7 @@ namespace RadioControlMod
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
             EskiUiClient.Resolve();
+            LocalMultiplayerClient.Resolve();
         }
 
         [OnLevelStart]
@@ -49,20 +49,20 @@ namespace RadioControlMod
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
             EskiUiClient.Resolve();
+            LocalMultiplayerClient.Resolve();
             RadioControlOverlay.EnsureAdded();
-            MultiplayerRuntime.OnLevelStart();
         }
 
         [OnLevelEnd]
         public static void OnLevelEnd()
         {
-            MultiplayerRuntime.OnLevelEnd();
+            RadioControlRuntime.Stop();
         }
 
         [OnLevelUnload]
         public static void OnLevelUnload()
         {
-            MultiplayerRuntime.OnLevelEnd();
+            RadioControlRuntime.Stop();
         }
 
         internal static double JumpFrameLaplaceAlpha
@@ -92,28 +92,14 @@ namespace RadioControlMod
             }
         }
 
-        internal static bool IsMultiplayerEnabled
-        {
-            get
-            {
-                EnsurePreferencesLoaded();
-                return _preferences.PlayerCount > 1;
-            }
-        }
-
         internal static int PlayerCount
         {
-            get
-            {
-                EnsurePreferencesLoaded();
-                return _preferences.PlayerCount;
-            }
+            get { return LocalMultiplayerClient.GetPlayerCount(); }
         }
 
         internal static PlayerTargets ResolvePlayerTargets(string user)
         {
-            EnsurePreferencesLoaded();
-            return _userRouter.Resolve(PlayerCount, user);
+            return (PlayerTargets)LocalMultiplayerClient.ResolvePlayerMask(user);
         }
 
         internal static void SetEnabled(bool isEnabled)
@@ -148,38 +134,6 @@ namespace RadioControlMod
             SavePreferences();
         }
 
-        internal static int SetPlayerCount(int playerCount)
-        {
-            EnsurePreferencesLoaded();
-
-            if (playerCount != 1 && playerCount != 2 && playerCount != 4)
-            {
-                return _preferences.PlayerCount;
-            }
-
-            if (_preferences.PlayerCount == playerCount)
-            {
-                return playerCount;
-            }
-
-            if (playerCount > 1)
-            {
-                string error;
-                if (!TryReloadPreferences(out error))
-                {
-                    RadioControlRuntime.ShowConfigurationError(error);
-                    return _preferences.PlayerCount;
-                }
-            }
-
-            _preferences.PlayerCount = playerCount;
-            SavePreferences();
-
-            RadioControlRuntime.StopAdditionalPlayers();
-            MultiplayerRuntime.SetPlayerCount(PlayerCount);
-            return playerCount;
-        }
-
         [PauseMenuItemSetting]
         [MainMenuItemSetting]
         public static RadioControlToggle RadioControlMenu(object factory, JumpKing.PauseMenu.GuiFormat format)
@@ -192,16 +146,6 @@ namespace RadioControlMod
         public static RadioDebugToggle RadioDebugMenu(object factory, JumpKing.PauseMenu.GuiFormat format)
         {
             return new RadioDebugToggle();
-        }
-
-        [PauseMenuItemSetting]
-        [MainMenuItemSetting]
-        public static RadioPlayerModeOption RadioMultiplayerMenu(
-            object factory,
-            JumpKing.PauseMenu.GuiFormat format
-        )
-        {
-            return new RadioPlayerModeOption();
         }
 
         private static void EnsurePatched()
@@ -237,74 +181,12 @@ namespace RadioControlMod
                     typeof(ControllerManagerPressedPadStatePatch),
                     "Postfix"
                 );
-                MethodInfo inputGetState = AccessTools.Method(typeof(InputComponent), "GetState");
-                MethodInfo inputGetPressedState = AccessTools.Method(
-                    typeof(InputComponent),
-                    "GetPressedState"
-                );
-                MethodInfo inputStatePrefix = AccessTools.Method(
-                    typeof(AdditionalPlayerInputStatePatch),
-                    "Prefix"
-                );
-                MethodInfo playerUpdate = AccessTools.Method(typeof(PlayerEntity), "Update");
-                MethodInfo playerUpdatePrefix = AccessTools.Method(
-                    typeof(AdditionalPlayerSaveUpdatePatch),
-                    "Prefix"
-                );
-                MethodInfo playerSetSprite = AccessTools.Method(
-                    typeof(PlayerEntity),
-                    "SetSprite"
-                );
-                MethodInfo additionalPlayerSpritePrefix = AccessTools.Method(
-                    typeof(AdditionalPlayerSpritePatch),
-                    "Prefix"
-                );
-                MethodInfo entityUpdateComponents = AccessTools.Method(
-                    typeof(Entity),
-                    "UpdateComponents"
-                );
-                MethodInfo additionalPlayerScreenPrefix = AccessTools.Method(
-                    typeof(AdditionalPlayerScreenUpdatePatch),
-                    "Prefix"
-                );
-                MethodInfo additionalPlayerScreenPostfix = AccessTools.Method(
-                    typeof(AdditionalPlayerScreenUpdatePatch),
-                    "Postfix"
-                );
-                MethodInfo jumpGameDraw = AccessTools.Method(typeof(JumpGame), "Draw");
-                MethodInfo jumpGameDrawPrefix = AccessTools.Method(
-                    typeof(MultiplayerDrawPatch),
-                    "Prefix"
-                );
-                Type endingManagerType = AccessTools.TypeByName(
-                    "JumpKing.GameManager.MultiEnding.EndingManager"
-                );
-                MethodInfo checkWin = endingManagerType == null ? null :
-                    AccessTools.Method(endingManagerType, "CheckWin");
-                MethodInfo checkWinPostfix = AccessTools.Method(
-                    typeof(MultiplayerEndingPatch),
-                    "Postfix"
-                );
                 if (getPadState == null ||
                     getPressedPadState == null ||
                     gameUpdate == null ||
                     gameUpdatePrefix == null ||
                     padStatePostfix == null ||
-                    pressedPadStatePostfix == null ||
-                    inputGetState == null ||
-                    inputGetPressedState == null ||
-                    inputStatePrefix == null ||
-                    playerUpdate == null ||
-                    playerUpdatePrefix == null ||
-                    playerSetSprite == null ||
-                    additionalPlayerSpritePrefix == null ||
-                    entityUpdateComponents == null ||
-                    additionalPlayerScreenPrefix == null ||
-                    additionalPlayerScreenPostfix == null ||
-                    jumpGameDraw == null ||
-                    jumpGameDrawPrefix == null ||
-                    checkWin == null ||
-                    checkWinPostfix == null)
+                    pressedPadStatePostfix == null)
                 {
                     JumpKing.Program.crashLog.AddErrorMessage(
                         "RadioControl patch target not found."
@@ -316,20 +198,6 @@ namespace RadioControlMod
                 _harmony.Patch(gameUpdate, prefix: new HarmonyMethod(gameUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
-                _harmony.Patch(inputGetState, prefix: new HarmonyMethod(inputStatePrefix));
-                _harmony.Patch(inputGetPressedState, prefix: new HarmonyMethod(inputStatePrefix));
-                _harmony.Patch(playerUpdate, prefix: new HarmonyMethod(playerUpdatePrefix));
-                _harmony.Patch(
-                    playerSetSprite,
-                    prefix: new HarmonyMethod(additionalPlayerSpritePrefix)
-                );
-                _harmony.Patch(
-                    entityUpdateComponents,
-                    prefix: new HarmonyMethod(additionalPlayerScreenPrefix),
-                    postfix: new HarmonyMethod(additionalPlayerScreenPostfix)
-                );
-                _harmony.Patch(jumpGameDraw, prefix: new HarmonyMethod(jumpGameDrawPrefix));
-                _harmony.Patch(checkWin, postfix: new HarmonyMethod(checkWinPostfix));
             }
             catch (Exception ex)
             {
@@ -358,11 +226,7 @@ namespace RadioControlMod
                     shouldSavePreferences =
                         !settingsText.Contains("JumpFrameLaplaceAlpha") ||
                         !settingsText.Contains("IsEnabled") ||
-                        !settingsText.Contains("IsDebugEnabled") ||
-                        !settingsText.Contains("PlayerCount") ||
-                        !settingsText.Contains("SingleMode") ||
-                        !settingsText.Contains("MultiplayerMode") ||
-                        !settingsText.Contains("FourPlayerMode");
+                        !settingsText.Contains("IsDebugEnabled");
 
                     var serializer = new XmlSerializer(typeof(RadioControlPreferences));
 
@@ -382,83 +246,9 @@ namespace RadioControlMod
                 shouldSavePreferences = true;
             }
 
-            EnsurePreferenceSections(_preferences);
-
-            try
-            {
-                _userRouter = CreateUserRouter(_preferences);
-            }
-            catch (FormatException ex)
-            {
-                JumpKing.Program.crashLog.AddErrorMessage(
-                    "RadioControl settings error: " + ex.Message
-                );
-                _preferences.PlayerCount = 1;
-                _userRouter = CreateUserRouter(new RadioControlPreferences());
-            }
-
             if (shouldSavePreferences)
             {
                 SavePreferences();
-            }
-        }
-
-        private static bool TryReloadPreferences(out string error)
-        {
-            error = null;
-
-            try
-            {
-                var serializer = new XmlSerializer(typeof(RadioControlPreferences));
-                RadioControlPreferences candidate;
-
-                using (var stream = File.OpenRead(_settingsPath))
-                {
-                    candidate = (RadioControlPreferences)serializer.Deserialize(stream);
-                }
-
-                EnsurePreferenceSections(candidate);
-                UserCommandRouter candidateRouter = CreateUserRouter(candidate);
-                _preferences = candidate;
-                _userRouter = candidateRouter;
-                return true;
-            }
-            catch (Exception ex)
-            {
-                error = "Multiplayer settings were not loaded: " + ex.Message;
-                JumpKing.Program.crashLog.AddErrorMessage("RadioControl: " + error);
-                return false;
-            }
-        }
-
-        private static UserCommandRouter CreateUserRouter(RadioControlPreferences preferences)
-        {
-            return new UserCommandRouter(
-                preferences.SingleMode.Player1Users,
-                preferences.MultiplayerMode.Player1Users,
-                preferences.MultiplayerMode.Player2Users,
-                preferences.FourPlayerMode.Player1Users,
-                preferences.FourPlayerMode.Player2Users,
-                preferences.FourPlayerMode.Player3Users,
-                preferences.FourPlayerMode.Player4Users
-            );
-        }
-
-        private static void EnsurePreferenceSections(RadioControlPreferences preferences)
-        {
-            if (preferences.SingleMode == null)
-            {
-                preferences.SingleMode = new SingleModePreferences();
-            }
-
-            if (preferences.MultiplayerMode == null)
-            {
-                preferences.MultiplayerMode = new MultiplayerModePreferences();
-            }
-
-            if (preferences.FourPlayerMode == null)
-            {
-                preferences.FourPlayerMode = new FourPlayerModePreferences();
             }
         }
 
@@ -484,23 +274,6 @@ namespace RadioControlMod
         public bool IsEnabled { get; set; } = true;
         public bool IsDebugEnabled { get; set; } = false;
         public double JumpFrameLaplaceAlpha { get; set; } = 0.1;
-        public int PlayerCount { get; set; } = 1;
-        public SingleModePreferences SingleMode { get; set; } = new SingleModePreferences();
-        public MultiplayerModePreferences MultiplayerMode { get; set; } =
-            new MultiplayerModePreferences();
-        public FourPlayerModePreferences FourPlayerMode { get; set; } =
-            new FourPlayerModePreferences();
-    }
-
-    public class SingleModePreferences
-    {
-        public string Player1Users { get; set; } = "*";
-    }
-
-    public class MultiplayerModePreferences
-    {
-        public string Player1Users { get; set; } = "[a-m]*";
-        public string Player2Users { get; set; } = "[n-z]*";
     }
 
     public class RadioControlToggle : ITextToggle
@@ -537,59 +310,6 @@ namespace RadioControlMod
         }
     }
 
-    public class FourPlayerModePreferences
-    {
-        public string Player1Users { get; set; } = "[a-f]*";
-        public string Player2Users { get; set; } = "[g-m]*";
-        public string Player3Users { get; set; } = "[n-s]*";
-        public string Player4Users { get; set; } = "[t-z]*";
-    }
-
-    public class RadioPlayerModeOption : IOptions
-    {
-        public RadioPlayerModeOption() : base(
-            3,
-            PlayerCountToOption(ModEntry.PlayerCount),
-            IOptions.EdgeMode.Wrap
-        )
-        {
-        }
-
-        protected override bool CanChange()
-        {
-            return true;
-        }
-
-        protected override string CurrentOptionName()
-        {
-            switch (CurrentOption)
-            {
-                case 1:
-                    return "Mode: 2 Players";
-                case 2:
-                    return "Mode: 4 Players";
-                default:
-                    return "Mode: Single Player";
-            }
-        }
-
-        protected override void OnOptionChange(int option)
-        {
-            int playerCount = OptionToPlayerCount(option);
-            CurrentOption = PlayerCountToOption(ModEntry.SetPlayerCount(playerCount));
-        }
-
-        private static int PlayerCountToOption(int playerCount)
-        {
-            return playerCount == 4 ? 2 : playerCount == 2 ? 1 : 0;
-        }
-
-        private static int OptionToPlayerCount(int option)
-        {
-            return option == 2 ? 4 : option == 1 ? 2 : 1;
-        }
-    }
-
     internal static class ControllerManagerPadStatePatch
     {
         public static void Postfix(ref PadState __result)
@@ -603,8 +323,8 @@ namespace RadioControlMod
         public static void Prefix()
         {
             MenuControlRuntime.BeginFrame();
-            MultiplayerRuntime.SynchronizeBlockBehaviours();
             RadioControlRuntime.UpdateInputFrame();
+            LocalMultiplayerClient.SubmitInputStates();
         }
     }
 

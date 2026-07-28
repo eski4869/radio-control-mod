@@ -21,7 +21,6 @@
     <Compile Include="..\RadioCommandCompiler.cs" Link="RadioCommandCompiler.cs" />
     <Compile Include="..\RadioCommandLexer.cs" Link="RadioCommandLexer.cs" />
     <Compile Include="..\RadioProgram.cs" Link="RadioProgram.cs" />
-    <Compile Include="..\UserCommandRouting.cs" Link="UserCommandRouting.cs" />
   </ItemGroup>
 
 </Project>

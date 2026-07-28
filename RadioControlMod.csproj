@@ -53,11 +53,11 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ModEntry.cs" />
-    <Compile Include="MultiplayerRuntime.cs" />
+    <Compile Include="LocalMultiplayerClient.cs" />
+    <Compile Include="PlayerTargets.cs" />
     <Compile Include="RadioCommandCompiler.cs" />
     <Compile Include="RadioCommandLexer.cs" />
     <Compile Include="RadioProgram.cs" />
-    <Compile Include="UserCommandRouting.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>

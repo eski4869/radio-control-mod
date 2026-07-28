@@ -114,57 +114,22 @@ http://127.0.0.1:8081/command?target=menu_control&command=cancel
   <IsEnabled>true</IsEnabled>
   <IsDebugEnabled>false</IsDebugEnabled>
   <JumpFrameLaplaceAlpha>0.1</JumpFrameLaplaceAlpha>
-  <PlayerCount>1</PlayerCount>
-  <SingleMode>
-    <Player1Users>*</Player1Users>
-  </SingleMode>
-  <MultiplayerMode>
-    <Player1Users>[a-m]*</Player1Users>
-    <Player2Users>[n-z]*</Player2Users>
-  </MultiplayerMode>
-  <FourPlayerMode>
-    <Player1Users>[a-f]*</Player1Users>
-    <Player2Users>[g-m]*</Player2Users>
-    <Player3Users>[n-s]*</Player3Users>
-    <Player4Users>[t-z]*</Player4Users>
-  </FourPlayerMode>
 </RadioControlPreferences>
 ```
-
-The player user fields are comma-separated allow lists. They support exact
-names (`alice`), prefix wildcards (`eski*`), first-character ranges (`[a-m]*`), and
-the all-users wildcard (`*`). Matching is case-insensitive.
-
-In single-player mode, a request without `user` controls Player 1. In multiplayer
-mode, `user` is required. If a name matches both multiplayer lists, the same command
-is queued for both players. A name that matches neither list is ignored.
-
-Selecting a multiplayer player count reloads this settings file, so the allow lists
-can be changed without restarting the game. Invalid settings keep the current mode
-and show an EskiUI notification.
 
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
 
 `Radio Control` and `Radio Debug` can be toggled from the main menu or pause menu.
-The mode selector provides `Single Player`, `2 Players`, and `4 Players`.
 When EskiUI is installed, Radio Control sends status and error notifications through
 its shared notification UI. It does not register any EskiUI commands.
 
-## Multiplayer Mode
+## Local multiplayer integration
 
-Two-player mode creates a second player and draws the players in left and right
-240-pixel views. Four-player mode creates three additional players and draws four
-240 x 180 views in a 2 x 2 layout. Each view follows its own vertical screen. Player
-colors are blue, purple, yellow, and green; only the blue/cyan body palette is
-recolored, so other sprite details remain intact. The first player to satisfy a
-native ending condition wins, and the normal Jump King ending flow is then used.
-Block behaviours registered on Player 1 by custom block mods are recreated for every
-additional player when the level begins, so all players use the same loaded rules.
-
-Additional players receive movement and jump commands (`j`, `jl`, `jr`, `l`, `r`,
-and `w`). Player-specific Snake and Boots activation is not provided because those
-systems read the game's shared controller state rather than `InputComponent`.
+When Local Multiplayer Mod is installed, Radio Control uses its user-routing and
+player-input API automatically. Without it, all accepted commands control Player 1.
+Multiplayer mode selection, user allow lists, cameras, and additional players are
+owned by Local Multiplayer Mod.
 
 ## Tests
 
