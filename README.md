@@ -56,7 +56,7 @@ A received command passes through five phases before it becomes game input.
 
 | Phase | Responsibility | Example |
 | --- | --- | --- |
-| 1. Command reception | `BrokerCommandClient` dequeues one command string from the `radio_control` target | `jr35, l20` |
+| 1. Command reception | `BrokerCommandClient` dequeues one parameter dictionary and reads `command` | `jr35, l20` |
 | 2. Lexical analysis | `RadioCommandLexer` splits the string into command tokens without executing them | `jr35` / `l20` |
 | 3. Semantic validation | `RadioCommandParser` applies defaults and validates command, frame, and program limits | right jump for 35F / left for 20F |
 | 4. Execution plan generation | Valid tokens are converted into `RadioStep` objects containing only the required input flags and frame count | `Jump + Right, 35F` |
@@ -128,11 +128,11 @@ its shared notification UI. It does not register any EskiUI commands.
 
 Radio Control resolves `user` through an `IPlayerResolver`. Its built-in resolver
 returns the normal Player 1 entity. When Local Multiplayer Mod is installed, that
-resolver is replaced by its optional `ResolvePlayers(string user)` API.
+resolver is replaced by its optional `ResolvePlayer(string user)` API.
 
-After resolution, Radio Control has no Player 1 through Player 4 branches. Every
-resolved `PlayerEntity` receives the same parsed `RadioProgram`, and the virtual
-input is merged into that entity's `InputComponent` result. Multiplayer mode,
+After resolution, Radio Control has no Player 1 through Player 4 branches. The
+resolved `PlayerEntity` receives the parsed `RadioProgram`, and virtual input is
+merged into that entity's `InputComponent` result. Multiplayer mode,
 user allow lists, player creation, and cameras remain owned by Local Multiplayer
 Mod.
 

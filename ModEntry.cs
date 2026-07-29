@@ -382,10 +382,13 @@ namespace RadioControlMod
             _command = null;
             BrokerCommandClient.Register(ModEntry.MenuCommandTarget);
 
+            IReadOnlyDictionary<string, string> parameters;
             if (!BrokerCommandClient.TryDequeue(
                 ModEntry.MenuCommandTarget,
-                out _command
-            ))
+                out parameters
+            ) ||
+                !parameters.TryGetValue("command", out _command) ||
+                string.IsNullOrWhiteSpace(_command))
             {
                 _command = null;
             }
@@ -849,16 +852,23 @@ namespace RadioControlMod
 
         private static void DispatchOnePendingCommand()
         {
-            string user;
+            IReadOnlyDictionary<string, string> parameters;
             string command;
 
-            if (!BrokerCommandClient.TryDequeue(ModEntry.CommandTarget, out user, out command))
+            if (!BrokerCommandClient.TryDequeue(
+                ModEntry.CommandTarget,
+                out parameters
+            ) ||
+                !parameters.TryGetValue("command", out command) ||
+                string.IsNullOrWhiteSpace(command))
             {
                 return;
             }
 
-            PlayerEntity[] targets = PlayerResolver.Resolve(user);
-            if (targets.Length == 0)
+            string user;
+            parameters.TryGetValue("user", out user);
+            PlayerEntity target = PlayerResolver.Resolve(user);
+            if (target == null)
             {
                 return;
             }
@@ -875,25 +885,8 @@ namespace RadioControlMod
                 return;
             }
 
-            bool accepted = false;
-            for (int i = 0; i < targets.Length; i++)
-            {
-                PlayerEntity target = targets[i];
-                if (target == null)
-                {
-                    continue;
-                }
-
-                GetOrCreateChannel(target).Enqueue(program.CreateCopy());
-                accepted = true;
-            }
-
-            if (accepted)
-            {
-                NotifyDebug("Radio queued: " + command, 2000);
-                return;
-            }
-
+            GetOrCreateChannel(target).Enqueue(program);
+            NotifyDebug("Radio queued: " + command, 2000);
         }
 
         private static bool ShouldShowReject(string error)
@@ -910,12 +903,10 @@ namespace RadioControlMod
 
         private static void DiscardPendingCommands()
         {
-            string ignoredUser;
-            string ignored;
+            IReadOnlyDictionary<string, string> ignored;
 
             while (BrokerCommandClient.TryDequeue(
                 ModEntry.CommandTarget,
-                out ignoredUser,
                 out ignored
             ))
             {
@@ -1185,8 +1176,7 @@ namespace RadioControlMod
         private static object _registry;
         private static MethodInfo _registerMethod;
         private static MethodInfo _tryDequeueMethod;
-        private static MethodInfo _tryDequeueWithUserMethod;
-        private static DateTime _nextResolveUtc = DateTime.MinValue;
+        private static int _lastResolveAssemblyCount = -1;
         private static bool _loggedMissingBroker;
         private static readonly HashSet<string> RegisteredTargets =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1216,9 +1206,12 @@ namespace RadioControlMod
             }
         }
 
-        public static bool TryDequeue(string target, out string command)
+        public static bool TryDequeue(
+            string target,
+            out IReadOnlyDictionary<string, string> parameters
+        )
         {
-            command = null;
+            parameters = null;
 
             if (!RegisteredTargets.Contains(target))
             {
@@ -1234,50 +1227,13 @@ namespace RadioControlMod
             {
                 object[] args = new object[] { target, null };
                 bool dequeued = (bool)_tryDequeueMethod.Invoke(_registry, args);
-                command = args[1] as string;
+                parameters = args[1] as IReadOnlyDictionary<string, string>;
                 return dequeued;
             }
             catch (Exception ex)
             {
                 JumpKing.Program.crashLog.AddErrorMessage(
                     "RadioControl broker dequeue failed: " + ex.Message
-                );
-                return false;
-            }
-        }
-
-        public static bool TryDequeue(string target, out string user, out string command)
-        {
-            user = null;
-            command = null;
-
-            if (!RegisteredTargets.Contains(target))
-            {
-                Register(target);
-            }
-
-            if (!RegisteredTargets.Contains(target) || !Resolve())
-            {
-                return false;
-            }
-
-            if (_tryDequeueWithUserMethod == null)
-            {
-                return TryDequeue(target, out command);
-            }
-
-            try
-            {
-                object[] args = new object[] { target, null, null };
-                bool dequeued = (bool)_tryDequeueWithUserMethod.Invoke(_registry, args);
-                user = args[1] as string;
-                command = args[2] as string;
-                return dequeued;
-            }
-            catch (Exception ex)
-            {
-                JumpKing.Program.crashLog.AddErrorMessage(
-                    "RadioControl broker user dequeue failed: " + ex.Message
                 );
                 return false;
             }
@@ -1290,15 +1246,13 @@ namespace RadioControlMod
                 return true;
             }
 
-            DateTime nowUtc = DateTime.UtcNow;
-            if (nowUtc < _nextResolveUtc)
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            if (_lastResolveAssemblyCount == assemblies.Length)
             {
                 return false;
             }
 
-            _nextResolveUtc = nowUtc.AddSeconds(1);
-
-            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            _lastResolveAssemblyCount = assemblies.Length;
             for (int i = 0; i < assemblies.Length; i++)
             {
                 Type registryType = assemblies[i].GetType(RegistryTypeName, false);
@@ -1317,15 +1271,10 @@ namespace RadioControlMod
                 );
                 MethodInfo tryDequeueMethod = registryType.GetMethod(
                     "TryDequeue",
-                    new Type[] { typeof(string), typeof(string).MakeByRefType() }
-                );
-                MethodInfo tryDequeueWithUserMethod = registryType.GetMethod(
-                    "TryDequeue",
                     new Type[]
                     {
                         typeof(string),
-                        typeof(string).MakeByRefType(),
-                        typeof(string).MakeByRefType()
+                        typeof(IReadOnlyDictionary<string, string>).MakeByRefType()
                     }
                 );
 
@@ -1337,7 +1286,6 @@ namespace RadioControlMod
                 _registry = instanceField.GetValue(null);
                 _registerMethod = registerMethod;
                 _tryDequeueMethod = tryDequeueMethod;
-                _tryDequeueWithUserMethod = tryDequeueWithUserMethod;
                 return _registry != null;
             }
 

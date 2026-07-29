@@ -7,7 +7,7 @@ namespace RadioControlMod
 {
     internal interface IPlayerResolver
     {
-        PlayerEntity[] Resolve(string user);
+        PlayerEntity Resolve(string user);
     }
 
     internal static class PlayerResolver
@@ -15,16 +15,22 @@ namespace RadioControlMod
         private static readonly IPlayerResolver SinglePlayer =
             new SinglePlayerResolver();
         private static IPlayerResolver _current = SinglePlayer;
-        private static bool _providerResolved;
+        private static int _lastResolveAssemblyCount = -1;
 
         public static void ResolveProvider()
         {
-            if (_providerResolved)
+            if (!ReferenceEquals(_current, SinglePlayer))
             {
                 return;
             }
 
-            _providerResolved = true;
+            int assemblyCount = AppDomain.CurrentDomain.GetAssemblies().Length;
+            if (_lastResolveAssemblyCount == assemblyCount)
+            {
+                return;
+            }
+
+            _lastResolveAssemblyCount = assemblyCount;
             IPlayerResolver optionalResolver =
                 ReflectedPlayerResolver.TryCreate();
             if (optionalResolver != null)
@@ -33,7 +39,7 @@ namespace RadioControlMod
             }
         }
 
-        public static PlayerEntity[] Resolve(string user)
+        public static PlayerEntity Resolve(string user)
         {
             ResolveProvider();
             return _current.Resolve(user);
@@ -42,12 +48,10 @@ namespace RadioControlMod
 
     internal sealed class SinglePlayerResolver : IPlayerResolver
     {
-        public PlayerEntity[] Resolve(string user)
+        public PlayerEntity Resolve(string user)
         {
-            PlayerEntity player = EntityManager.instance == null ? null :
+            return EntityManager.instance == null ? null :
                 EntityManager.instance.Find<PlayerEntity>();
-            return player == null ?
-                new PlayerEntity[0] : new PlayerEntity[] { player };
         }
     }
 
@@ -56,19 +60,18 @@ namespace RadioControlMod
         private const string ApiTypeName =
             "LocalMultiplayerMod.LocalMultiplayerApi";
 
-        private delegate PlayerEntity[] ResolvePlayersDelegate(string user);
+        private delegate PlayerEntity ResolvePlayerDelegate(string user);
 
-        private readonly ResolvePlayersDelegate _resolvePlayers;
+        private readonly ResolvePlayerDelegate _resolvePlayer;
 
-        private ReflectedPlayerResolver(ResolvePlayersDelegate resolvePlayers)
+        private ReflectedPlayerResolver(ResolvePlayerDelegate resolvePlayer)
         {
-            _resolvePlayers = resolvePlayers;
+            _resolvePlayer = resolvePlayer;
         }
 
-        public PlayerEntity[] Resolve(string user)
+        public PlayerEntity Resolve(string user)
         {
-            PlayerEntity[] players = _resolvePlayers(user);
-            return players ?? new PlayerEntity[0];
+            return _resolvePlayer(user);
         }
 
         public static IPlayerResolver TryCreate()
@@ -80,7 +83,7 @@ namespace RadioControlMod
             }
 
             MethodInfo method = apiType.GetMethod(
-                "ResolvePlayers",
+                "ResolvePlayer",
                 BindingFlags.Public | BindingFlags.Static
             );
             if (method == null)
@@ -89,10 +92,10 @@ namespace RadioControlMod
             }
 
             var resolver = Delegate.CreateDelegate(
-                typeof(ResolvePlayersDelegate),
+                typeof(ResolvePlayerDelegate),
                 method,
                 false
-            ) as ResolvePlayersDelegate;
+            ) as ResolvePlayerDelegate;
             return resolver == null ? null :
                 new ReflectedPlayerResolver(resolver);
         }
