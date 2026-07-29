@@ -38,7 +38,7 @@ namespace RadioControlMod
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
             EskiUiClient.Resolve();
-            LocalMultiplayerClient.Resolve();
+            PlayerResolver.ResolveProvider();
         }
 
         [OnLevelStart]
@@ -49,7 +49,7 @@ namespace RadioControlMod
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
             EskiUiClient.Resolve();
-            LocalMultiplayerClient.Resolve();
+            PlayerResolver.ResolveProvider();
             RadioControlOverlay.EnsureAdded();
         }
 
@@ -90,16 +90,6 @@ namespace RadioControlMod
                 EnsurePreferencesLoaded();
                 return _preferences.IsDebugEnabled;
             }
-        }
-
-        internal static int PlayerCount
-        {
-            get { return LocalMultiplayerClient.GetPlayerCount(); }
-        }
-
-        internal static PlayerTargets ResolvePlayerTargets(string user)
-        {
-            return (PlayerTargets)LocalMultiplayerClient.ResolvePlayerMask(user);
         }
 
         internal static void SetEnabled(bool isEnabled)
@@ -165,6 +155,14 @@ namespace RadioControlMod
                     typeof(ControllerManager),
                     "GetPressedPadState"
                 );
+                MethodInfo getInputState = AccessTools.Method(
+                    typeof(InputComponent),
+                    "GetState"
+                );
+                MethodInfo getPressedInputState = AccessTools.Method(
+                    typeof(InputComponent),
+                    "GetPressedState"
+                );
                 MethodInfo gameUpdate = AccessTools.Method(
                     typeof(Game1),
                     "Update"
@@ -181,12 +179,24 @@ namespace RadioControlMod
                     typeof(ControllerManagerPressedPadStatePatch),
                     "Postfix"
                 );
+                MethodInfo inputStatePostfix = AccessTools.Method(
+                    typeof(InputComponentStatePatch),
+                    "Postfix"
+                );
+                MethodInfo pressedInputStatePostfix = AccessTools.Method(
+                    typeof(InputComponentPressedStatePatch),
+                    "Postfix"
+                );
                 if (getPadState == null ||
                     getPressedPadState == null ||
+                    getInputState == null ||
+                    getPressedInputState == null ||
                     gameUpdate == null ||
                     gameUpdatePrefix == null ||
                     padStatePostfix == null ||
-                    pressedPadStatePostfix == null)
+                    pressedPadStatePostfix == null ||
+                    inputStatePostfix == null ||
+                    pressedInputStatePostfix == null)
                 {
                     JumpKing.Program.crashLog.AddErrorMessage(
                         "RadioControl patch target not found."
@@ -198,6 +208,11 @@ namespace RadioControlMod
                 _harmony.Patch(gameUpdate, prefix: new HarmonyMethod(gameUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
+                _harmony.Patch(getInputState, postfix: new HarmonyMethod(inputStatePostfix));
+                _harmony.Patch(
+                    getPressedInputState,
+                    postfix: new HarmonyMethod(pressedInputStatePostfix)
+                );
             }
             catch (Exception ex)
             {
@@ -314,7 +329,7 @@ namespace RadioControlMod
     {
         public static void Postfix(ref PadState __result)
         {
-            RadioVirtualInput.ApplyHeld(ref __result);
+            RadioVirtualInput.ApplyGlobalHeld(ref __result);
         }
     }
 
@@ -324,7 +339,6 @@ namespace RadioControlMod
         {
             MenuControlRuntime.BeginFrame();
             RadioControlRuntime.UpdateInputFrame();
-            LocalMultiplayerClient.SubmitInputStates();
         }
     }
 
@@ -333,7 +347,29 @@ namespace RadioControlMod
         public static void Postfix(ref PadState __result)
         {
             MenuControlRuntime.ApplyPressed(ref __result);
-            RadioVirtualInput.ApplyPressed(ref __result);
+            RadioVirtualInput.ApplyGlobalPressed(ref __result);
+        }
+    }
+
+    internal static class InputComponentStatePatch
+    {
+        public static void Postfix(
+            InputComponent __instance,
+            ref InputComponent.State __result
+        )
+        {
+            RadioVirtualInput.ApplyHeld(__instance, ref __result);
+        }
+    }
+
+    internal static class InputComponentPressedStatePatch
+    {
+        public static void Postfix(
+            InputComponent __instance,
+            ref InputComponent.State __result
+        )
+        {
+            RadioVirtualInput.ApplyPressed(__instance, ref __result);
         }
     }
 
@@ -396,13 +432,11 @@ namespace RadioControlMod
 
     internal static class RadioVirtualInput
     {
-        private static readonly VirtualPad Player1 = new VirtualPad();
-        private static readonly VirtualPad Player2 = new VirtualPad();
-        private static readonly VirtualPad Player3 = new VirtualPad();
-        private static readonly VirtualPad Player4 = new VirtualPad();
+        private static readonly Dictionary<PlayerEntity, VirtualPad> Players =
+            new Dictionary<PlayerEntity, VirtualPad>();
 
         public static void Set(
-            PlayerTargets target,
+            PlayerEntity target,
             bool left,
             bool right,
             bool jump,
@@ -410,139 +444,157 @@ namespace RadioControlMod
             bool snake
         )
         {
-            GetPad(target).Set(left, right, jump, boots, snake);
+            if (target == null)
+            {
+                return;
+            }
+
+            GetOrCreatePad(target).Set(left, right, jump, boots, snake);
         }
 
-        public static void Clear(PlayerTargets target)
+        public static void Clear(PlayerEntity target)
         {
-            GetPad(target).Clear();
+            VirtualPad pad;
+            if (target != null && Players.TryGetValue(target, out pad))
+            {
+                pad.Clear();
+            }
         }
 
         public static void ClearAll()
         {
-            Player1.Clear();
-            Player2.Clear();
-            Player3.Clear();
-            Player4.Clear();
+            Players.Clear();
         }
 
-        public static void ApplyHeld(ref PadState state)
+        public static void ApplyHeld(
+            InputComponent input,
+            ref InputComponent.State state
+        )
         {
-            if (!Player1.HasHeld)
+            VirtualPad pad;
+            if (!TryGetActivePad(input, out pad) || !pad.HasHeld)
             {
                 return;
             }
 
-            if (RadioGameState.IsPaused())
-            {
-                return;
-            }
-
-            if (EntityManager.instance == null ||
-                EntityManager.instance.Find<PlayerEntity>() == null)
-            {
-                return;
-            }
-
-            if (Player1.Left)
+            if (pad.Left)
             {
                 state.left = true;
             }
 
-            if (Player1.Right)
+            if (pad.Right)
             {
                 state.right = true;
             }
 
-            if (Player1.Jump)
+            if (pad.Jump)
             {
                 state.jump = true;
             }
+        }
 
-            if (Player1.Boots)
+        public static void ApplyPressed(
+            InputComponent input,
+            ref InputComponent.State state
+        )
+        {
+            VirtualPad pad;
+            if (!TryGetActivePad(input, out pad) || !pad.HasPressed)
+            {
+                return;
+            }
+
+            if (pad.PressedLeft)
+            {
+                state.left = true;
+            }
+
+            if (pad.PressedRight)
+            {
+                state.right = true;
+            }
+
+            if (pad.PressedJump)
+            {
+                state.jump = true;
+            }
+        }
+
+        public static void ApplyGlobalHeld(ref PadState state)
+        {
+            VirtualPad pad;
+            if (!TryGetPrimaryPad(out pad))
+            {
+                return;
+            }
+
+            if (pad.Boots)
             {
                 state.boots = true;
             }
 
-            if (Player1.Snake)
+            if (pad.Snake)
             {
                 state.snake = true;
             }
         }
 
-        public static void ApplyPressed(ref PadState state)
+        public static void ApplyGlobalPressed(ref PadState state)
         {
-            if (!Player1.HasPressed)
+            VirtualPad pad;
+            if (!TryGetPrimaryPad(out pad))
             {
                 return;
             }
 
-            if (RadioGameState.IsPaused())
-            {
-                return;
-            }
-
-            if (EntityManager.instance == null ||
-                EntityManager.instance.Find<PlayerEntity>() == null)
-            {
-                return;
-            }
-
-            if (Player1.PressedLeft)
-            {
-                state.left = true;
-            }
-
-            if (Player1.PressedRight)
-            {
-                state.right = true;
-            }
-
-            if (Player1.PressedJump)
-            {
-                state.jump = true;
-            }
-
-            if (Player1.PressedBoots)
+            if (pad.PressedBoots)
             {
                 state.boots = true;
             }
 
-            if (Player1.PressedSnake)
+            if (pad.PressedSnake)
             {
                 state.snake = true;
             }
         }
 
-        public static InputComponent.State GetPlayerState(PlayerTargets target, bool pressed)
+        private static bool TryGetActivePad(
+            InputComponent input,
+            out VirtualPad pad
+        )
         {
-            var state = new InputComponent.State();
-
-            if (RadioGameState.IsPaused())
+            pad = null;
+            if (RadioGameState.IsPaused() || input == null || input.gameObject == null)
             {
-                return state;
+                return false;
             }
 
-            VirtualPad pad = GetPad(target);
-            state.left = pressed ? pad.PressedLeft : pad.Left;
-            state.right = pressed ? pad.PressedRight : pad.Right;
-            state.jump = pressed ? pad.PressedJump : pad.Jump;
-            return state;
+            PlayerEntity player = input.gameObject as PlayerEntity;
+            return player != null && Players.TryGetValue(player, out pad);
         }
 
-        private static VirtualPad GetPad(PlayerTargets target)
+        private static bool TryGetPrimaryPad(out VirtualPad pad)
         {
-            switch (target)
+            pad = null;
+            if (RadioGameState.IsPaused() || EntityManager.instance == null)
             {
-                case PlayerTargets.Player2:
-                    return Player2;
-                case PlayerTargets.Player3:
-                    return Player3;
-                case PlayerTargets.Player4:
-                    return Player4;
-                default:
-                    return Player1;
+                return false;
             }
+
+            PlayerEntity player = EntityManager.instance.Find<PlayerEntity>();
+            return player != null && Players.TryGetValue(player, out pad);
+        }
+
+        private static VirtualPad GetOrCreatePad(PlayerEntity target)
+        {
+            VirtualPad pad;
+            if (!Players.TryGetValue(target, out pad))
+            {
+                pad = new VirtualPad();
+                Players.Add(target, pad);
+            }
+
+            return pad;
         }
 
         private sealed class VirtualPad
@@ -722,24 +774,16 @@ namespace RadioControlMod
 
     internal static class RadioControlRuntime
     {
-        private static readonly PlayerCommandChannel Player1 =
-            new PlayerCommandChannel(PlayerTargets.Player1, "P1");
-        private static readonly PlayerCommandChannel Player2 =
-            new PlayerCommandChannel(PlayerTargets.Player2, "P2");
-        private static readonly PlayerCommandChannel Player3 =
-            new PlayerCommandChannel(PlayerTargets.Player3, "P3");
-        private static readonly PlayerCommandChannel Player4 =
-            new PlayerCommandChannel(PlayerTargets.Player4, "P4");
-        private static readonly PlayerCommandChannel[] Players =
-            new PlayerCommandChannel[] { Player1, Player2, Player3, Player4 };
+        private static readonly List<PlayerCommandChannel> Channels =
+            new List<PlayerCommandChannel>();
 
         public static bool IsRunning
         {
             get
             {
-                for (int i = 0; i < Players.Length; i++)
+                for (int i = 0; i < Channels.Count; i++)
                 {
-                    if (Players[i].IsRunning)
+                    if (Channels[i].IsRunning)
                     {
                         return true;
                     }
@@ -774,35 +818,28 @@ namespace RadioControlMod
             }
 
             DispatchOnePendingCommand();
-            int playerCount = ModEntry.PlayerCount;
-            for (int i = 0; i < Players.Length; i++)
+            for (int i = Channels.Count - 1; i >= 0; i--)
             {
-                if (i < playerCount)
+                PlayerCommandChannel channel = Channels[i];
+                if (channel.Target == null || !channel.Target.IsAlive)
                 {
-                    Players[i].Update();
+                    channel.Stop();
+                    Channels.RemoveAt(i);
+                    continue;
                 }
-                else
-                {
-                    Players[i].Stop();
-                }
+
+                channel.Update();
             }
         }
 
         public static void Stop()
         {
             RadioVirtualInput.ClearAll();
-            for (int i = 0; i < Players.Length; i++)
+            for (int i = 0; i < Channels.Count; i++)
             {
-                Players[i].Stop();
+                Channels[i].Stop();
             }
-        }
-
-        public static void StopAdditionalPlayers()
-        {
-            for (int i = 1; i < Players.Length; i++)
-            {
-                Players[i].Stop();
-            }
+            Channels.Clear();
         }
 
         public static void ShowConfigurationError(string error)
@@ -820,48 +857,35 @@ namespace RadioControlMod
                 return;
             }
 
-            PlayerTargets targets = ModEntry.ResolvePlayerTargets(user);
-            if (targets == PlayerTargets.None)
+            PlayerEntity[] targets = PlayerResolver.Resolve(user);
+            if (targets.Length == 0)
             {
                 return;
             }
 
-            bool accepted = false;
+            RadioProgram program;
             string error = null;
-
-            if ((targets & PlayerTargets.Player1) != 0)
+            if (!RadioCommandParser.TryParse(command, out program, out error))
             {
-                accepted |= Player1.TryEnqueue(command, out error);
+                if (ShouldShowReject(error))
+                {
+                    EskiUiClient.Notify("Radio rejected: " + error, 4000);
+                }
+
+                return;
             }
 
-            if ((targets & PlayerTargets.Player2) != 0)
+            bool accepted = false;
+            for (int i = 0; i < targets.Length; i++)
             {
-                string player2Error;
-                accepted |= Player2.TryEnqueue(command, out player2Error);
-                if (error == null)
+                PlayerEntity target = targets[i];
+                if (target == null)
                 {
-                    error = player2Error;
+                    continue;
                 }
-            }
 
-            if ((targets & PlayerTargets.Player3) != 0)
-            {
-                string player3Error;
-                accepted |= Player3.TryEnqueue(command, out player3Error);
-                if (error == null)
-                {
-                    error = player3Error;
-                }
-            }
-
-            if ((targets & PlayerTargets.Player4) != 0)
-            {
-                string player4Error;
-                accepted |= Player4.TryEnqueue(command, out player4Error);
-                if (error == null)
-                {
-                    error = player4Error;
-                }
+                GetOrCreateChannel(target).Enqueue(program.CreateCopy());
+                accepted = true;
             }
 
             if (accepted)
@@ -870,10 +894,6 @@ namespace RadioControlMod
                 return;
             }
 
-            if (ShouldShowReject(error))
-            {
-                EskiUiClient.Notify("Radio rejected: " + error, 4000);
-            }
         }
 
         private static bool ShouldShowReject(string error)
@@ -912,18 +932,38 @@ namespace RadioControlMod
             EskiUiClient.Notify(message, durationMs);
         }
 
+        private static PlayerCommandChannel GetOrCreateChannel(
+            PlayerEntity target
+        )
+        {
+            for (int i = 0; i < Channels.Count; i++)
+            {
+                if (ReferenceEquals(Channels[i].Target, target))
+                {
+                    return Channels[i];
+                }
+            }
+
+            var channel = new PlayerCommandChannel(target);
+            Channels.Add(channel);
+            return channel;
+        }
+
         private sealed class PlayerCommandChannel
         {
-            private readonly PlayerTargets _target;
-            private readonly string _label;
+            private readonly PlayerEntity _target;
             private readonly Queue<RadioProgram> _programs = new Queue<RadioProgram>();
             private RadioProgram _program;
             private int _lastNotifiedStep;
 
-            public PlayerCommandChannel(PlayerTargets target, string label)
+            public PlayerCommandChannel(PlayerEntity target)
             {
                 _target = target;
-                _label = label;
+            }
+
+            public PlayerEntity Target
+            {
+                get { return _target; }
             }
 
             public bool IsRunning
@@ -931,16 +971,9 @@ namespace RadioControlMod
                 get { return _program != null || _programs.Count > 0; }
             }
 
-            public bool TryEnqueue(string command, out string error)
+            public void Enqueue(RadioProgram program)
             {
-                RadioProgram parsed;
-                if (!RadioCommandParser.TryParse(command, out parsed, out error))
-                {
-                    return false;
-                }
-
-                _programs.Enqueue(parsed);
-                return true;
+                _programs.Enqueue(program);
             }
 
             public void Update()
@@ -978,7 +1011,7 @@ namespace RadioControlMod
                 {
                     _lastNotifiedStep = _program.StepIndex;
                     NotifyDebug(
-                        "Radio " + _label + " " + _program.StepIndex + "/" +
+                        "Radio " + _program.StepIndex + "/" +
                             _program.StepCount + ": " + _program.Status,
                         1200
                     );
@@ -988,7 +1021,7 @@ namespace RadioControlMod
 
                 if (_program.IsComplete)
                 {
-                    NotifyDebug("Radio " + _label + " done", 2000);
+                    NotifyDebug("Radio done", 2000);
                     _program = null;
                     _lastNotifiedStep = 0;
                 }

@@ -48,6 +48,11 @@ namespace RadioControlMod
             get { return !IsComplete && _releaseFrames > 0; }
         }
 
+        public RadioProgram CreateCopy()
+        {
+            return new RadioProgram(_steps, _source);
+        }
+
         public RadioStep ActiveStep
         {
             get

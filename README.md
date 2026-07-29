@@ -126,10 +126,15 @@ its shared notification UI. It does not register any EskiUI commands.
 
 ## Local multiplayer integration
 
-When Local Multiplayer Mod is installed, Radio Control uses its user-routing and
-player-input API automatically. Without it, all accepted commands control Player 1.
-Multiplayer mode selection, user allow lists, cameras, and additional players are
-owned by Local Multiplayer Mod.
+Radio Control resolves `user` through an `IPlayerResolver`. Its built-in resolver
+returns the normal Player 1 entity. When Local Multiplayer Mod is installed, that
+resolver is replaced by its optional `ResolvePlayers(string user)` API.
+
+After resolution, Radio Control has no Player 1 through Player 4 branches. Every
+resolved `PlayerEntity` receives the same parsed `RadioProgram`, and the virtual
+input is merged into that entity's `InputComponent` result. Multiplayer mode,
+user allow lists, player creation, and cameras remain owned by Local Multiplayer
+Mod.
 
 ## Tests
 

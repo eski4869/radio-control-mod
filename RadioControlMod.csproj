@@ -53,8 +53,7 @@
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ModEntry.cs" />
-    <Compile Include="LocalMultiplayerClient.cs" />
-    <Compile Include="PlayerTargets.cs" />
+    <Compile Include="PlayerResolver.cs" />
     <Compile Include="RadioCommandCompiler.cs" />
     <Compile Include="RadioCommandLexer.cs" />
     <Compile Include="RadioProgram.cs" />
