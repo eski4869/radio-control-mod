@@ -84,6 +84,15 @@ http://127.0.0.1:8081/command?target=radio_control&command=jr35%20w10%20l5
 
 The HTTP server is provided by JumpKingHttpCommandBroker.
 
+The optional `user` parameter is used for player routing:
+
+```text
+http://127.0.0.1:8081/command?target=radio_control&user=alice&command=jr35
+http://127.0.0.1:8081/command?target=radio_control&user=nancy&command=jl35
+```
+
+Older requests without `user` continue to control Player 1 in single-player mode.
+
 Menu example:
 
 ```text
@@ -108,12 +117,19 @@ http://127.0.0.1:8081/command?target=menu_control&command=cancel
 </RadioControlPreferences>
 ```
 
-Restart the game after editing the file.
-
 `JumpFrameLaplaceAlpha` controls jump-frame variance for `j`, `jr`, and `jl`.
 `35` frames stays exact.
 
-`Radio Control` and `Radio Debug` can also be toggled from the main menu or pause menu.
+`Radio Control` and `Radio Debug` can be toggled from the main menu or pause menu.
+When EskiUI is installed, Radio Control sends status and error notifications through
+its shared notification UI. It does not register any EskiUI commands.
+
+## Local multiplayer integration
+
+When Local Multiplayer Mod is installed, Radio Control uses its user-routing and
+player-input API automatically. Without it, all accepted commands control Player 1.
+Multiplayer mode selection, user allow lists, cameras, and additional players are
+owned by Local Multiplayer Mod.
 
 ## Tests
 

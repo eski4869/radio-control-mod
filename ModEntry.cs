@@ -7,6 +7,8 @@ using EntityComponent;
 using HarmonyLib;
 using JumpKing;
 using JumpKing.Controller;
+using JumpKing.GameManager.MultiEnding;
+using JumpKing.Level;
 using JumpKing.Mods;
 using JumpKing.PauseMenu.BT.Actions;
 using JumpKing.Player;
@@ -35,6 +37,8 @@ namespace RadioControlMod
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
+            EskiUiClient.Resolve();
+            LocalMultiplayerClient.Resolve();
         }
 
         [OnLevelStart]
@@ -44,7 +48,21 @@ namespace RadioControlMod
             EnsurePatched();
             BrokerCommandClient.Register(CommandTarget);
             BrokerCommandClient.Register(MenuCommandTarget);
+            EskiUiClient.Resolve();
+            LocalMultiplayerClient.Resolve();
             RadioControlOverlay.EnsureAdded();
+        }
+
+        [OnLevelEnd]
+        public static void OnLevelEnd()
+        {
+            RadioControlRuntime.Stop();
+        }
+
+        [OnLevelUnload]
+        public static void OnLevelUnload()
+        {
+            RadioControlRuntime.Stop();
         }
 
         internal static double JumpFrameLaplaceAlpha
@@ -72,6 +90,16 @@ namespace RadioControlMod
                 EnsurePreferencesLoaded();
                 return _preferences.IsDebugEnabled;
             }
+        }
+
+        internal static int PlayerCount
+        {
+            get { return LocalMultiplayerClient.GetPlayerCount(); }
+        }
+
+        internal static PlayerTargets ResolvePlayerTargets(string user)
+        {
+            return (PlayerTargets)LocalMultiplayerClient.ResolvePlayerMask(user);
         }
 
         internal static void SetEnabled(bool isEnabled)
@@ -137,14 +165,6 @@ namespace RadioControlMod
                     typeof(ControllerManager),
                     "GetPressedPadState"
                 );
-                MethodInfo inputComponentUpdate = AccessTools.Method(
-                    typeof(InputComponent),
-                    "Update"
-                );
-                MethodInfo inputComponentUpdatePrefix = AccessTools.Method(
-                    typeof(InputComponentUpdatePatch),
-                    "Prefix"
-                );
                 MethodInfo gameUpdate = AccessTools.Method(
                     typeof(Game1),
                     "Update"
@@ -163,8 +183,6 @@ namespace RadioControlMod
                 );
                 if (getPadState == null ||
                     getPressedPadState == null ||
-                    inputComponentUpdate == null ||
-                    inputComponentUpdatePrefix == null ||
                     gameUpdate == null ||
                     gameUpdatePrefix == null ||
                     padStatePostfix == null ||
@@ -178,7 +196,6 @@ namespace RadioControlMod
 
                 _harmony = new Harmony("eski4869.RadioControlMod");
                 _harmony.Patch(gameUpdate, prefix: new HarmonyMethod(gameUpdatePrefix));
-                _harmony.Patch(inputComponentUpdate, prefix: new HarmonyMethod(inputComponentUpdatePrefix));
                 _harmony.Patch(getPadState, postfix: new HarmonyMethod(padStatePostfix));
                 _harmony.Patch(getPressedPadState, postfix: new HarmonyMethod(pressedPadStatePostfix));
             }
@@ -252,14 +269,6 @@ namespace RadioControlMod
         }
     }
 
-    internal static class InputComponentUpdatePatch
-    {
-        public static void Prefix()
-        {
-            RadioControlRuntime.UpdateInputFrame();
-        }
-    }
-
     public class RadioControlPreferences
     {
         public bool IsEnabled { get; set; } = true;
@@ -314,6 +323,8 @@ namespace RadioControlMod
         public static void Prefix()
         {
             MenuControlRuntime.BeginFrame();
+            RadioControlRuntime.UpdateInputFrame();
+            LocalMultiplayerClient.SubmitInputStates();
         }
     }
 
@@ -385,48 +396,39 @@ namespace RadioControlMod
 
     internal static class RadioVirtualInput
     {
-        private static bool _left;
-        private static bool _right;
-        private static bool _jump;
-        private static bool _boots;
-        private static bool _snake;
-        private static bool _pressedLeft;
-        private static bool _pressedRight;
-        private static bool _pressedJump;
-        private static bool _pressedBoots;
-        private static bool _pressedSnake;
+        private static readonly VirtualPad Player1 = new VirtualPad();
+        private static readonly VirtualPad Player2 = new VirtualPad();
+        private static readonly VirtualPad Player3 = new VirtualPad();
+        private static readonly VirtualPad Player4 = new VirtualPad();
 
-        public static void Set(bool left, bool right, bool jump, bool boots, bool snake)
+        public static void Set(
+            PlayerTargets target,
+            bool left,
+            bool right,
+            bool jump,
+            bool boots,
+            bool snake
+        )
         {
-            _pressedLeft = left && !_left;
-            _pressedRight = right && !_right;
-            _pressedJump = jump && !_jump;
-            _pressedBoots = boots && !_boots;
-            _pressedSnake = snake && !_snake;
-            _left = left;
-            _right = right;
-            _jump = jump;
-            _boots = boots;
-            _snake = snake;
+            GetPad(target).Set(left, right, jump, boots, snake);
         }
 
-        public static void Clear()
+        public static void Clear(PlayerTargets target)
         {
-            _left = false;
-            _right = false;
-            _jump = false;
-            _boots = false;
-            _snake = false;
-            _pressedLeft = false;
-            _pressedRight = false;
-            _pressedJump = false;
-            _pressedBoots = false;
-            _pressedSnake = false;
+            GetPad(target).Clear();
+        }
+
+        public static void ClearAll()
+        {
+            Player1.Clear();
+            Player2.Clear();
+            Player3.Clear();
+            Player4.Clear();
         }
 
         public static void ApplyHeld(ref PadState state)
         {
-            if (!_left && !_right && !_jump && !_boots && !_snake)
+            if (!Player1.HasHeld)
             {
                 return;
             }
@@ -442,27 +444,27 @@ namespace RadioControlMod
                 return;
             }
 
-            if (_left)
+            if (Player1.Left)
             {
                 state.left = true;
             }
 
-            if (_right)
+            if (Player1.Right)
             {
                 state.right = true;
             }
 
-            if (_jump)
+            if (Player1.Jump)
             {
                 state.jump = true;
             }
 
-            if (_boots)
+            if (Player1.Boots)
             {
                 state.boots = true;
             }
 
-            if (_snake)
+            if (Player1.Snake)
             {
                 state.snake = true;
             }
@@ -470,7 +472,7 @@ namespace RadioControlMod
 
         public static void ApplyPressed(ref PadState state)
         {
-            if (!_pressedLeft && !_pressedRight && !_pressedJump && !_pressedBoots && !_pressedSnake)
+            if (!Player1.HasPressed)
             {
                 return;
             }
@@ -486,29 +488,116 @@ namespace RadioControlMod
                 return;
             }
 
-            if (_pressedLeft)
+            if (Player1.PressedLeft)
             {
                 state.left = true;
             }
 
-            if (_pressedRight)
+            if (Player1.PressedRight)
             {
                 state.right = true;
             }
 
-            if (_pressedJump)
+            if (Player1.PressedJump)
             {
                 state.jump = true;
             }
 
-            if (_pressedBoots)
+            if (Player1.PressedBoots)
             {
                 state.boots = true;
             }
 
-            if (_pressedSnake)
+            if (Player1.PressedSnake)
             {
                 state.snake = true;
+            }
+        }
+
+        public static InputComponent.State GetPlayerState(PlayerTargets target, bool pressed)
+        {
+            var state = new InputComponent.State();
+
+            if (RadioGameState.IsPaused())
+            {
+                return state;
+            }
+
+            VirtualPad pad = GetPad(target);
+            state.left = pressed ? pad.PressedLeft : pad.Left;
+            state.right = pressed ? pad.PressedRight : pad.Right;
+            state.jump = pressed ? pad.PressedJump : pad.Jump;
+            return state;
+        }
+
+        private static VirtualPad GetPad(PlayerTargets target)
+        {
+            switch (target)
+            {
+                case PlayerTargets.Player2:
+                    return Player2;
+                case PlayerTargets.Player3:
+                    return Player3;
+                case PlayerTargets.Player4:
+                    return Player4;
+                default:
+                    return Player1;
+            }
+        }
+
+        private sealed class VirtualPad
+        {
+            public bool Left;
+            public bool Right;
+            public bool Jump;
+            public bool Boots;
+            public bool Snake;
+            public bool PressedLeft;
+            public bool PressedRight;
+            public bool PressedJump;
+            public bool PressedBoots;
+            public bool PressedSnake;
+
+            public bool HasHeld
+            {
+                get { return Left || Right || Jump || Boots || Snake; }
+            }
+
+            public bool HasPressed
+            {
+                get
+                {
+                    return PressedLeft || PressedRight || PressedJump ||
+                        PressedBoots || PressedSnake;
+                }
+            }
+
+            public void Set(bool left, bool right, bool jump, bool boots, bool snake)
+            {
+                PressedLeft = left && !Left;
+                PressedRight = right && !Right;
+                PressedJump = jump && !Jump;
+                PressedBoots = boots && !Boots;
+                PressedSnake = snake && !Snake;
+                Left = left;
+                Right = right;
+                Jump = jump;
+                Boots = boots;
+                Snake = snake;
+            }
+
+            public void Clear()
+            {
+                Left = false;
+                Right = false;
+                Jump = false;
+                Boots = false;
+                Snake = false;
+                PressedLeft = false;
+                PressedRight = false;
+                PressedJump = false;
+                PressedBoots = false;
+                PressedSnake = false;
             }
         }
     }
@@ -633,29 +722,31 @@ namespace RadioControlMod
 
     internal static class RadioControlRuntime
     {
-        private static RadioProgram _program;
-
-        public static string DisplayText { get; private set; }
-        public static float MessageSeconds { get; private set; }
-        private static bool _forceDisplay;
-
-        public static bool HasDisplay
-        {
-            get
-            {
-                return _program != null ||
-                    (MessageSeconds > 0f && !string.IsNullOrEmpty(DisplayText));
-            }
-        }
+        private static readonly PlayerCommandChannel Player1 =
+            new PlayerCommandChannel(PlayerTargets.Player1, "P1");
+        private static readonly PlayerCommandChannel Player2 =
+            new PlayerCommandChannel(PlayerTargets.Player2, "P2");
+        private static readonly PlayerCommandChannel Player3 =
+            new PlayerCommandChannel(PlayerTargets.Player3, "P3");
+        private static readonly PlayerCommandChannel Player4 =
+            new PlayerCommandChannel(PlayerTargets.Player4, "P4");
+        private static readonly PlayerCommandChannel[] Players =
+            new PlayerCommandChannel[] { Player1, Player2, Player3, Player4 };
 
         public static bool IsRunning
         {
-            get { return _program != null; }
-        }
+            get
+            {
+                for (int i = 0; i < Players.Length; i++)
+                {
+                    if (Players[i].IsRunning)
+                    {
+                        return true;
+                    }
+                }
 
-        public static bool ShouldDrawDisplay
-        {
-            get { return HasDisplay && (ModEntry.IsDebugEnabled || _forceDisplay); }
+                return false;
+            }
         }
 
         public static void UpdateInputFrame()
@@ -671,96 +762,118 @@ namespace RadioControlMod
 
             if (RadioGameState.IsPaused())
             {
-                RadioVirtualInput.Clear();
+                RadioVirtualInput.ClearAll();
                 return;
             }
 
-            if (_program == null)
+            if (EntityManager.instance == null ||
+                EntityManager.instance.Find<PlayerEntity>() == null)
             {
-                RadioVirtualInput.Clear();
-                TryStartNextProgram();
-            }
-
-            if (_program == null)
-            {
+                RadioVirtualInput.ClearAll();
                 return;
             }
 
-            ApplyProgramInput();
-            _forceDisplay = false;
-            DisplayText = "Radio " + _program.StepIndex + "/" + _program.StepCount + ": " + _program.Status;
-            MessageSeconds = 1.2f;
-
-            _program.AdvanceOneFrame();
-
-            if (_program.IsComplete)
+            DispatchOnePendingCommand();
+            int playerCount = ModEntry.PlayerCount;
+            for (int i = 0; i < Players.Length; i++)
             {
-                _forceDisplay = false;
-                DisplayText = "Radio done";
-                MessageSeconds = 2f;
-                _program = null;
+                if (i < playerCount)
+                {
+                    Players[i].Update();
+                }
+                else
+                {
+                    Players[i].Stop();
+                }
             }
-        }
-
-        private static void ApplyProgramInput()
-        {
-            RadioStep step = _program.ActiveStep;
-
-            if (step == null)
-            {
-                RadioVirtualInput.Clear();
-                return;
-            }
-
-            RadioVirtualInput.Set(
-                step.Left,
-                step.Right,
-                step.Jump,
-                step.Boots,
-                step.Snake
-            );
-        }
-
-        public static void UpdateUi(float delta)
-        {
-            TickMessage(delta);
         }
 
         public static void Stop()
         {
-            RadioVirtualInput.Clear();
-            _program = null;
-            _forceDisplay = false;
+            RadioVirtualInput.ClearAll();
+            for (int i = 0; i < Players.Length; i++)
+            {
+                Players[i].Stop();
+            }
         }
 
-        private static void TryStartNextProgram()
+        public static void StopAdditionalPlayers()
         {
+            for (int i = 1; i < Players.Length; i++)
+            {
+                Players[i].Stop();
+            }
+        }
+
+        public static void ShowConfigurationError(string error)
+        {
+            EskiUiClient.Notify(error, 6000);
+        }
+
+        private static void DispatchOnePendingCommand()
+        {
+            string user;
             string command;
 
-            if (!BrokerCommandClient.TryDequeue(ModEntry.CommandTarget, out command))
+            if (!BrokerCommandClient.TryDequeue(ModEntry.CommandTarget, out user, out command))
             {
                 return;
             }
 
-            RadioProgram parsed;
-            string error;
-
-            if (!RadioCommandParser.TryParse(command, out parsed, out error))
+            PlayerTargets targets = ModEntry.ResolvePlayerTargets(user);
+            if (targets == PlayerTargets.None)
             {
-                if (ShouldShowReject(error))
+                return;
+            }
+
+            bool accepted = false;
+            string error = null;
+
+            if ((targets & PlayerTargets.Player1) != 0)
+            {
+                accepted |= Player1.TryEnqueue(command, out error);
+            }
+
+            if ((targets & PlayerTargets.Player2) != 0)
+            {
+                string player2Error;
+                accepted |= Player2.TryEnqueue(command, out player2Error);
+                if (error == null)
                 {
-                    _forceDisplay = true;
-                    DisplayText = "Radio rejected: " + error;
-                    MessageSeconds = 4f;
+                    error = player2Error;
                 }
+            }
 
+            if ((targets & PlayerTargets.Player3) != 0)
+            {
+                string player3Error;
+                accepted |= Player3.TryEnqueue(command, out player3Error);
+                if (error == null)
+                {
+                    error = player3Error;
+                }
+            }
+
+            if ((targets & PlayerTargets.Player4) != 0)
+            {
+                string player4Error;
+                accepted |= Player4.TryEnqueue(command, out player4Error);
+                if (error == null)
+                {
+                    error = player4Error;
+                }
+            }
+
+            if (accepted)
+            {
+                NotifyDebug("Radio queued: " + command, 2000);
                 return;
             }
 
-            _program = parsed;
-            _forceDisplay = false;
-            DisplayText = "Radio start: " + parsed.Source;
-            MessageSeconds = 2f;
+            if (ShouldShowReject(error))
+            {
+                EskiUiClient.Notify("Radio rejected: " + error, 4000);
+            }
         }
 
         private static bool ShouldShowReject(string error)
@@ -777,28 +890,123 @@ namespace RadioControlMod
 
         private static void DiscardPendingCommands()
         {
+            string ignoredUser;
             string ignored;
 
-            while (BrokerCommandClient.TryDequeue(ModEntry.CommandTarget, out ignored))
+            while (BrokerCommandClient.TryDequeue(
+                ModEntry.CommandTarget,
+                out ignoredUser,
+                out ignored
+            ))
             {
             }
         }
 
-        private static void TickMessage(float delta)
+        private static void NotifyDebug(string message, int durationMs)
         {
-            if (MessageSeconds <= 0f)
+            if (!ModEntry.IsDebugEnabled)
             {
                 return;
             }
 
-            MessageSeconds = Math.Max(0f, MessageSeconds - delta);
+            EskiUiClient.Notify(message, durationMs);
+        }
+
+        private sealed class PlayerCommandChannel
+        {
+            private readonly PlayerTargets _target;
+            private readonly string _label;
+            private readonly Queue<RadioProgram> _programs = new Queue<RadioProgram>();
+            private RadioProgram _program;
+            private int _lastNotifiedStep;
+
+            public PlayerCommandChannel(PlayerTargets target, string label)
+            {
+                _target = target;
+                _label = label;
+            }
+
+            public bool IsRunning
+            {
+                get { return _program != null || _programs.Count > 0; }
+            }
+
+            public bool TryEnqueue(string command, out string error)
+            {
+                RadioProgram parsed;
+                if (!RadioCommandParser.TryParse(command, out parsed, out error))
+                {
+                    return false;
+                }
+
+                _programs.Enqueue(parsed);
+                return true;
+            }
+
+            public void Update()
+            {
+                if (_program == null && _programs.Count > 0)
+                {
+                    _program = _programs.Dequeue();
+                    _lastNotifiedStep = 0;
+                }
+
+                if (_program == null)
+                {
+                    RadioVirtualInput.Clear(_target);
+                    return;
+                }
+
+                RadioStep step = _program.ActiveStep;
+                if (step == null)
+                {
+                    RadioVirtualInput.Clear(_target);
+                }
+                else
+                {
+                    RadioVirtualInput.Set(
+                        _target,
+                        step.Left,
+                        step.Right,
+                        step.Jump,
+                        step.Boots,
+                        step.Snake
+                    );
+                }
+
+                if (_lastNotifiedStep != _program.StepIndex)
+                {
+                    _lastNotifiedStep = _program.StepIndex;
+                    NotifyDebug(
+                        "Radio " + _label + " " + _program.StepIndex + "/" +
+                            _program.StepCount + ": " + _program.Status,
+                        1200
+                    );
+                }
+
+                _program.AdvanceOneFrame();
+
+                if (_program.IsComplete)
+                {
+                    NotifyDebug("Radio " + _label + " done", 2000);
+                    _program = null;
+                    _lastNotifiedStep = 0;
+                }
+            }
+
+            public void Stop()
+            {
+                _program = null;
+                _lastNotifiedStep = 0;
+                _programs.Clear();
+                RadioVirtualInput.Clear(_target);
+            }
         }
     }
 
     public sealed class RadioControlOverlay : Entity, IForeground
     {
         private static RadioControlOverlay _instance;
-        private Texture2D _pixel;
 
         public static void EnsureAdded()
         {
@@ -816,59 +1024,9 @@ namespace RadioControlMod
             EntityManager.instance.AddObject(_instance);
         }
 
-        protected override void Update(float delta)
-        {
-            RadioControlRuntime.UpdateUi(delta);
-        }
-
         public void ForegroundDraw()
         {
             DrawRajikonMode();
-
-            if (!RadioControlRuntime.ShouldDrawDisplay)
-            {
-                return;
-            }
-
-            SpriteFont font = GetFont();
-            if (font == null)
-            {
-                return;
-            }
-
-            EnsurePixel();
-            if (_pixel == null)
-            {
-                return;
-            }
-
-            string text = RadioControlRuntime.DisplayText ?? string.Empty;
-            Vector2 size = font.MeasureString(text);
-            int paddingX = 8;
-            int paddingY = 5;
-            int width = (int)Math.Ceiling(size.X) + paddingX * 2;
-            int height = (int)Math.Ceiling(size.Y) + paddingY * 2;
-            int x = 480 - width - 10;
-            int y = 10;
-
-            Game1.spriteBatch.Draw(
-                _pixel,
-                new Rectangle(x, y, width, height),
-                new Color((byte)0, (byte)0, (byte)0, (byte)185)
-            );
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y, width, 1), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y + height - 1, width, 1), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x, y, 1, height), Color.Gray);
-            Game1.spriteBatch.Draw(_pixel, new Rectangle(x + width - 1, y, 1, height), Color.Gray);
-
-            TextHelper.DrawString(
-                font,
-                text,
-                new Vector2(x + paddingX, y + paddingY),
-                Color.White,
-                Vector2.Zero,
-                true
-            );
         }
 
         private void DrawRajikonMode()
@@ -896,27 +1054,10 @@ namespace RadioControlMod
 
         protected override void OnDestroy()
         {
-            if (_pixel != null)
-            {
-                _pixel.Dispose();
-                _pixel = null;
-            }
-
             if (ReferenceEquals(_instance, this))
             {
                 _instance = null;
             }
-        }
-
-        private void EnsurePixel()
-        {
-            if (_pixel != null || Game1.instance == null)
-            {
-                return;
-            }
-
-            _pixel = new Texture2D(Game1.instance.GraphicsDevice, 1, 1);
-            _pixel.SetData(new[] { Color.White });
         }
 
         private static SpriteFont GetFont()
@@ -935,6 +1076,75 @@ namespace RadioControlMod
         }
     }
 
+    internal static class EskiUiClient
+    {
+        private static Action<string, int> _notify;
+
+        public static void Resolve()
+        {
+            if (_notify != null)
+            {
+                return;
+            }
+
+            try
+            {
+                Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+                for (int i = 0; i < assemblies.Length; i++)
+                {
+                    if (!string.Equals(
+                        assemblies[i].GetName().Name,
+                        "EskiUI",
+                        StringComparison.Ordinal))
+                    {
+                        continue;
+                    }
+
+                    Type apiType = assemblies[i].GetType("EskiUI", false);
+                    if (apiType == null)
+                    {
+                        return;
+                    }
+
+                    MethodInfo notifyMethod = apiType.GetMethod(
+                        "Notify",
+                        new[] { typeof(string), typeof(int) }
+                    );
+                    if (notifyMethod != null)
+                    {
+                        _notify = (Action<string, int>)Delegate.CreateDelegate(
+                            typeof(Action<string, int>),
+                            notifyMethod
+                        );
+                    }
+
+                    return;
+                }
+            }
+            catch
+            {
+                _notify = null;
+            }
+        }
+
+        public static void Notify(string message, int durationMs)
+        {
+            Resolve();
+            if (_notify == null)
+            {
+                return;
+            }
+
+            try
+            {
+                _notify(message, durationMs);
+            }
+            catch
+            {
+            }
+        }
+    }
+
     internal static class BrokerCommandClient
     {
         private const string RegistryTypeName = "JumpKingHttpCommandBroker.CommandQueueRegistry";
@@ -942,6 +1152,7 @@ namespace RadioControlMod
         private static object _registry;
         private static MethodInfo _registerMethod;
         private static MethodInfo _tryDequeueMethod;
+        private static MethodInfo _tryDequeueWithUserMethod;
         private static DateTime _nextResolveUtc = DateTime.MinValue;
         private static bool _loggedMissingBroker;
         private static readonly HashSet<string> RegisteredTargets =
@@ -1002,6 +1213,43 @@ namespace RadioControlMod
             }
         }
 
+        public static bool TryDequeue(string target, out string user, out string command)
+        {
+            user = null;
+            command = null;
+
+            if (!RegisteredTargets.Contains(target))
+            {
+                Register(target);
+            }
+
+            if (!RegisteredTargets.Contains(target) || !Resolve())
+            {
+                return false;
+            }
+
+            if (_tryDequeueWithUserMethod == null)
+            {
+                return TryDequeue(target, out command);
+            }
+
+            try
+            {
+                object[] args = new object[] { target, null, null };
+                bool dequeued = (bool)_tryDequeueWithUserMethod.Invoke(_registry, args);
+                user = args[1] as string;
+                command = args[2] as string;
+                return dequeued;
+            }
+            catch (Exception ex)
+            {
+                JumpKing.Program.crashLog.AddErrorMessage(
+                    "RadioControl broker user dequeue failed: " + ex.Message
+                );
+                return false;
+            }
+        }
+
         private static bool Resolve()
         {
             if (_registry != null)
@@ -1038,6 +1286,15 @@ namespace RadioControlMod
                     "TryDequeue",
                     new Type[] { typeof(string), typeof(string).MakeByRefType() }
                 );
+                MethodInfo tryDequeueWithUserMethod = registryType.GetMethod(
+                    "TryDequeue",
+                    new Type[]
+                    {
+                        typeof(string),
+                        typeof(string).MakeByRefType(),
+                        typeof(string).MakeByRefType()
+                    }
+                );
 
                 if (instanceField == null || registerMethod == null || tryDequeueMethod == null)
                 {
@@ -1047,6 +1304,7 @@ namespace RadioControlMod
                 _registry = instanceField.GetValue(null);
                 _registerMethod = registerMethod;
                 _tryDequeueMethod = tryDequeueMethod;
+                _tryDequeueWithUserMethod = tryDequeueWithUserMethod;
                 return _registry != null;
             }
 
