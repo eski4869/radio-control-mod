@@ -136,6 +136,14 @@ merged into that entity's `InputComponent` result. Multiplayer mode,
 user allow lists, player creation, and cameras remain owned by Local Multiplayer
 Mod.
 
+Giant Boots and the Snake Ring are the exception. `InputComponent.State` carries
+no such fields: the base game reads those toggles off the single physical pad and
+applies them to a global skin list, so only the primary player had a path. Those
+presses now go to Local Multiplayer Mod's `ToggleItem`, which owns per-player item
+state. The primary player still goes through the pad so the base game's own toggle
+path runs unchanged. The API is optional, so this does nothing when Local
+Multiplayer Mod is absent.
+
 ## Tests
 
 The tests cover lexer command boundaries, semantic validation, generated input flags, and frame-by-frame execution without loading Jump King.
