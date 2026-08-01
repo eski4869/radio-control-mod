@@ -1,6 +1,7 @@
 using System;
 using System.Reflection;
 using EntityComponent;
+using JumpKing.MiscEntities.WorldItems;
 using JumpKing.Player;
 
 namespace RadioControlMod
@@ -52,6 +53,96 @@ namespace RadioControlMod
         {
             return EntityManager.instance == null ? null :
                 EntityManager.instance.Find<PlayerEntity>();
+        }
+    }
+
+    /// <summary>
+    /// Per-player item toggles.
+    ///
+    /// Left, right and jump reach a specific player through that player's own
+    /// <see cref="InputComponent" />. Giant Boots and the Snake Ring cannot: the
+    /// base game reads them off the single physical pad in <c>GameLoop</c> and
+    /// applies them to a global skin list, so there is no per-player channel.
+    ///
+    /// Routing this mod's per-user boots/snake press through the Local
+    /// Multiplayer API gives them one. Player 1 keeps going through the normal
+    /// pad path so the vanilla toggle sound and shoe-swap logic still run; only
+    /// the additional players, whose presses would otherwise be dropped entirely,
+    /// come through here. Without the multiplayer mod present this does nothing.
+    /// </summary>
+    internal static class MultiplayerItems
+    {
+        private const string ApiTypeName =
+            "LocalMultiplayerMod.LocalMultiplayerApi";
+
+        private delegate bool ToggleItemDelegate(
+            PlayerEntity player,
+            int item,
+            out bool equipped
+        );
+
+        private static ToggleItemDelegate _toggleItem;
+        private static int _lastResolveAssemblyCount = -1;
+
+        public static bool ToggleBoots(PlayerEntity player)
+        {
+            return Toggle(player, (int)Items.GiantBoots);
+        }
+
+        public static bool ToggleSnake(PlayerEntity player)
+        {
+            return Toggle(player, (int)Items.SnakeRing);
+        }
+
+        private static bool Toggle(PlayerEntity player, int item)
+        {
+            ResolveApi();
+            if (_toggleItem == null || player == null)
+            {
+                return false;
+            }
+
+            bool equipped;
+            return _toggleItem(player, item, out equipped);
+        }
+
+        private static void ResolveApi()
+        {
+            if (_toggleItem != null)
+            {
+                return;
+            }
+
+            Assembly[] assemblies = AppDomain.CurrentDomain.GetAssemblies();
+            if (_lastResolveAssemblyCount == assemblies.Length)
+            {
+                return;
+            }
+
+            _lastResolveAssemblyCount = assemblies.Length;
+            for (int i = 0; i < assemblies.Length; i++)
+            {
+                Type apiType = assemblies[i].GetType(ApiTypeName, false);
+                if (apiType == null)
+                {
+                    continue;
+                }
+
+                MethodInfo method = apiType.GetMethod(
+                    "ToggleItem",
+                    BindingFlags.Public | BindingFlags.Static
+                );
+                if (method != null)
+                {
+                    _toggleItem = Delegate.CreateDelegate(
+                        typeof(ToggleItemDelegate),
+                        method,
+                        false
+                    ) as ToggleItemDelegate;
+                }
+
+                return;
+            }
         }
     }
 

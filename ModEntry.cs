@@ -561,6 +561,50 @@ namespace RadioControlMod
             }
         }
 
+        /// <summary>
+        /// Delivers boots/snake presses for every player except the primary.
+        ///
+        /// The primary player's press still goes out through
+        /// <see cref="ApplyGlobalPressed" /> so the base game's own toggle path -
+        /// sound, shoe swap, achievement bookkeeping - runs unchanged. The other
+        /// players have no such path, so their press is handed to the multiplayer
+        /// mod's per-player item state instead of being dropped.
+        ///
+        /// Called once per frame, unlike the pad-state postfixes, which run many
+        /// times and must stay free of side effects.
+        /// </summary>
+        public static void DispatchAdditionalPlayerItemToggles()
+        {
+            if (RadioGameState.IsPaused() || Players.Count == 0)
+            {
+                return;
+            }
+
+            PlayerEntity primary = EntityManager.instance == null ? null :
+                EntityManager.instance.Find<PlayerEntity>();
+
+            foreach (KeyValuePair<PlayerEntity, VirtualPad> entry in Players)
+            {
+                PlayerEntity player = entry.Key;
+                if (player == null || !player.IsAlive ||
+                    ReferenceEquals(player, primary))
+                {
+                    continue;
+                }
+
+                VirtualPad pad = entry.Value;
+                if (pad.PressedBoots)
+                {
+                    MultiplayerItems.ToggleBoots(player);
+                }
+
+                if (pad.PressedSnake)
+                {
+                    MultiplayerItems.ToggleSnake(player);
+                }
+            }
+        }
+
         private static bool TryGetActivePad(
             InputComponent input,
             out VirtualPad pad
@@ -833,6 +877,8 @@ namespace RadioControlMod
 
                 channel.Update();
             }
+
+            RadioVirtualInput.DispatchAdditionalPlayerItemToggles();
         }
 
         public static void Stop()
